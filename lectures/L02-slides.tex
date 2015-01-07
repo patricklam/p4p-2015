@@ -1,0 +1,409 @@
+\documentclass[aspectratio=43]{beamer}
+
+\usetheme{Boadilla}
+\setbeamertemplate{footline}[page number]{}
+\setbeamertemplate{navigation symbols}{}
+
+\usepackage{times}
+\usepackage{tikz}
+\usefonttheme{structurebold}
+\usepackage{listings}
+
+% Suppress the navigation bar
+\beamertemplatenavigationsymbolsempty
+
+\newenvironment{changemargin}[1]{% 
+  \begin{list}{}{% 
+    \setlength{\topsep}{0pt}% 
+    \setlength{\leftmargin}{#1}% 
+    \setlength{\rightmargin}{1em}
+    \setlength{\listparindent}{\parindent}% 
+    \setlength{\itemindent}{\parindent}% 
+    \setlength{\parsep}{\parskip}% 
+  }% 
+  \item[]}{\end{list}} 
+
+\title{Lecture 02---Amdahl's Law, Modern Hardware}
+\subtitle{ECE 459: Programming for Performance}
+\author{Patrick Lam}
+\institute{University of Waterloo}
+\date{January 7, 2015}
+
+\begin{document}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{About Prediction and Speedups}
+
+\begin{center}
+Cliff Click said: ``5\% miss rates dominate performance.'' \\[2em]
+
+Why is that?\\[2em]
+\only<2>{Recall: 100-1000 slot penalty for a miss.}
+\end{center}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Forcing Branch Mispredicts}
+
+\begin{center}
+\url{blog.man7.org/2012/10/how-much-do-builtinexpect-likely-and.html}
+\end{center}
+
+{\tiny
+\begin{verbatim}
+#include <stdlib.h>
+#include <stdio.h>
+
+static __attribute__ ((noinline)) int f(int a) { return a; }
+
+#define BSIZE 1000000
+int main(int argc, char* argv[]) 
+{
+  int *p = calloc(BSIZE, sizeof(int));
+  int j, k, m1 = 0, m2 = 0;
+  for (j = 0; j < 1000; j++) {
+    for (k = 0; k < BSIZE; k++) {
+      if (__builtin_expect(p[k], EXPECT_RESULT)) {
+        m1 = f(++m1);
+      } else {
+        m2 = f(++m2);
+      }
+    }
+  }
+
+  printf("%d, %d\n", m1, m2);
+}
+\end{verbatim}
+}
+Running times: 3.1s with good (or no) hint, 4.9s with bogus hint.
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Limitations of Speedups}
+\hspace*{.2\textwidth}\begin{minipage}{.75\textwidth}
+    Our main focus is parallelization.\\[1em]
+  \begin{itemize}
+    \vfill
+    \item Most programs have a sequential part and a parallel part; and,\\[1em]
+    \item Amdahl's Law answers, ``what are the limits to parallelization?''
+  \end{itemize}
+\end{minipage}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% intro here
+
+\section{Amdahl's Law}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Formulation (1)}
+
+  \hspace*{2em}\begin{minipage}{.8\textwidth}
+  $S$: fraction of serial runtime in a serial execution.
+
+  $P$: fraction of parallel runtime in a serial execution.
+
+  Therefore, $S + P = 1$.\\[2em]
+
+  With 4 processors, best case, what can happen to the following runtime?
+  \end{minipage}
+
+  \hspace*{5em}\begin{tikzpicture}
+   \draw[<->] (-1.5,0.75) -- (7.5,0.75) node[above] {Runtime};
+   \draw (0,0) node[rectangle, fill=red, minimum height=0.75cm, minimum width=3cm,draw] {S};
+   \draw (4.5,0) node[rectangle, fill=green, minimum height=0.75cm, minimum width=6cm,draw] {P};
+  \end{tikzpicture}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Formulation (1)}
+
+  \hspace*{5em}\begin{tikzpicture}
+   \draw[<->] (-1.5,0.75) -- (7.5,0.75) node[above] {Runtime};
+   \draw (0,0) node[rectangle, fill=red, minimum height=0.75cm, minimum width=3cm,draw] {S};
+   \draw (4.5,0) node[rectangle, fill=green, minimum height=0.75cm, minimum width=6cm,draw] {P};
+  \end{tikzpicture}
+  \vfill
+  We want to split up the parallel part over 4 processors
+  \vfill
+  \hspace*{5em}\begin{tikzpicture}
+   \draw[<->] (-1.5,0.75) -- (3,0.75) node[above] {Runtime};
+   \draw (0,0) node[rectangle, fill=red, minimum height=0.75cm, minimum width=3cm,draw] {S};
+   \draw (2.25,0) node[rectangle, fill=green, minimum height=0.75cm, minimum width=1.5cm,draw] {P};
+   \draw (2.25,-0.75) node[rectangle, fill=green, minimum height=0.75cm, minimum width=1.5cm,draw] {P};
+   \draw (2.25,-1.5) node[rectangle, fill=green, minimum height=0.75cm, minimum width=1.5cm,draw] {P};
+   \draw (2.25,-2.25) node[rectangle, fill=green, minimum height=0.75cm, minimum width=1.5cm,draw] {P};
+  \end{tikzpicture}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Formulation (2)}
+
+\Large
+$T_s$: time for the program to run in serial
+
+$N$: number of processors/parallel executions
+
+$T_p$: time for the program to run in parallel
+\vfill
+  \begin{itemize}
+    \item Under perfect conditions, get $N$ speedup for $P$
+  \end{itemize}
+\vfill
+
+  \begin{center}
+$T_p = T_s \cdot (S + \frac{P}{N})$
+  \end{center}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Formulation (3)}
+
+  \hspace*{3em} How much faster can we make the program?
+
+  \begin{eqnarray*}
+  \mbox{\em speedup} &=& \frac{T_s}{T_p}\\
+                     &=& \frac{T_s}{T_S \cdot (S + \frac{P}{N})}\\
+                     &=& \frac{1}{S + \frac{P}{N}}
+  \end{eqnarray*}
+  \vfill
+  \hspace*{3em} (assuming no overhead for parallelizing; or costs near
+  zero)
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Fixed-Size Problem Scaling, \\ Varying Fraction of Parallel Code}
+
+  \begin{center}
+    \hspace*{2em}\includegraphics[scale=0.68]{L02/parallel-scaling}
+  \end{center}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Amdahl's Law}
+
+ \hspace*{2em}Replace $S$ with $(1 - P)$:
+
+  \begin{center}
+    \structure{$\mbox{\em speedup} = \frac{1}{(1 - P) + \frac{P}{N}}$}
+  \end{center}
+  \vfill
+  \begin{center}
+    $\mbox{\em maximum speedup} = \frac{1}{(1 - P)}$, since $\frac{P}{N} \rightarrow 0$
+  \end{center}
+  \vfill
+  \hspace*{2em}\begin{minipage}{.8\textwidth}As you might imagine, the asymptotes in the previous graph are bounded by the
+  maximum speedup.\end{minipage}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% P_estimated
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Assumptions behind Amdahl's Law}
+
+  \begin{changemargin}{2cm}
+    How can we invalidate Amdahl's Law?
+  \end{changemargin}
+  
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Assumptions behind Amdahl's Law}
+
+  \begin{changemargin}{2cm}
+    We assume:
+    \begin{itemize}
+    \item problem size is fixed (we'll see this soon);
+    \item program/algorithm behaves the same on 1 processor and on $N$ processors; and
+    \item that we can accurately measure runtimes---\\ ~~i.e. that overheads don't matter.
+    \end{itemize}
+  \end{changemargin}
+  
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Amdahl's Law Generalization}
+
+  \hspace*{2em} \begin{minipage}{.8\textwidth} The program may have many parts, each of which we can tune to
+  a different degree.\\[1em]
+
+  Let's generalize Amdahl's Law.\\[1em]
+
+  $f_1, f_2, \ldots, f_n$: fraction of time in part $n$
+
+  $S_{f_1}, S_{f_n}, \ldots, S_{f_n}$: speedup for part $n$
+\end{minipage}
+  \vfill
+  \begin{center}
+  \structure{\[\mbox{\em speedup} = \frac{1}{\frac{f_1}{S_{f_1}} + \frac{f_2}{S_{f_2}} + \ldots +
+    \frac{f_n}{S_{f_n}}}\]}
+  \end{center}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Application (1)}
+
+  \hspace*{2em} 
+  \begin{minipage}{.8\textwidth} Consider a program with 4 parts in the following scenario:\\[2em]
+    \begin{tabular}{r|r|r|r}
+    \multicolumn{2}{l}{} & \multicolumn{2}{c}{Speedup} \\
+    Part & Fraction of Runtime & Option 1 & Option 2\\
+    \hline
+    1 & 0.55 & 1  & 2\\
+    2 & 0.25 & 5  & 1\\
+    3 & 0.15 & 3  & 1\\
+    4 & 0.05  & 10 & 1\\
+  \end{tabular}
+
+~\\[2em]
+  We can implement either Option 1 or Option 2. \\
+  Which option is better?
+  \end{minipage}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Application (2)}
+
+\begin{minipage}{.8\textwidth}
+  \hspace*{2em} ``Plug and chug'' the numbers:\\[1em]
+\hspace*{.2\textwidth}\begin{minipage}{.8\textwidth}
+  {\bf Option 1} \vspace*{-2em}
+
+  \[ \mbox{\em speedup} = \frac{1}{0.55 + \frac{0.25}{5} + \frac{0.15}{3} + \frac{0.05}{5}}
+    = 1.53  \]
+~\\[1em]
+  {\bf Option 2} \vspace*{-2em}
+
+   \[\mbox{\em speedup} = \frac{1}{\frac{0.55}{2} + 0.45} = 1.38 \hspace*{5.5em}\]
+\end{minipage}
+\end{minipage}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Empirically estimating parallel speedup P}
+
+  \hspace*{2em} Useful to know, don't have to commit to memory:
+  \vfill
+  \[P_{\mbox{\scriptsize estimated}} = \frac{\frac{1}{\mbox{\em speedup}}-1}{\frac{1}{N}-1}\]
+  \vfill
+  \hspace*{2em} \begin{minipage}{.8\textwidth} \begin{itemize}
+    \item Quick way to guess the fraction of parallel code
+    \item Use $P_{\mbox{\scriptsize estimated}}$ to predict speedup for a different number of processors
+  \end{itemize} \end{minipage}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Summary of Amdahl's Law}
+
+\hspace*{2em} Important to focus on the part of the program with most impact.\\[1em]
+
+\hspace*{2em} Amdahl's Law:\\[1em]
+\hspace*{2em} \begin{minipage}{.8\textwidth}
+  \begin{itemize}
+    \item estimates perfect performance gains from
+          parallelization; but,
+    \vfill
+    \item only applies to solving a \structure{fixed problem size} in the
+          shortest possible period of time
+  \end{itemize} \end{minipage}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Gustafson's Law}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Gustafson's Law: Formulation}
+
+\hspace*{2em} \begin{minipage}{.8\textwidth}
+\begin{tabbing}
+  $n$:~~~~~~ \= problem size\\[.1em]
+
+  $S(n)$: \> fraction of serial runtime for a parallel execution\\[.1em]
+
+  $P(n)$: \> fraction of parallel runtime for a parallel execution\\
+\end{tabbing}
+\end{minipage}
+
+\begin{eqnarray*}
+T_p &=& S(n) + P(n) = 1 \\
+T_s &=& S(n) + N \cdot P(n) 
+\end{eqnarray*}
+
+\[ \mbox{\em speedup} = \frac{T_s}{T_p} \]
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Gustafson's Law}
+
+\hspace*{2em}\begin{minipage}{.8\textwidth}
+  \structure{$speedup = S(n) + N \cdot P(n)$}\\[1em]
+
+  Assuming the fraction of runtime in serial part decreases as $n$ increases,
+  the speedup approaches $N$.
+
+  \begin{itemize}
+    \item Yes! Large problems can be efficiently parallelized. (Ask Google.)
+  \end {itemize}
+\end{minipage}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Driving Metaphor}
+
+  {\bf Amdahl's Law}
+  
+  Suppose you're travelling between 2 cities 90~km apart. If you travel for an
+  hour at a constant speed less than 90 km/h, your average will never equal
+  90~km/h, even if you energize after that hour.
+  \vfill
+  {\bf Gustafson's Law}
+
+  Suppose you've been travelling at a constant speed less than 90~km/h. Given
+  enough distance, you can bring your average up to 90~km/h.
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\end{document}
