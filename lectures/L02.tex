@@ -42,7 +42,7 @@
 
 \begin{document}
 
-\lecture{2 --- January 10, 2013}{Winter 2013}{Patrick Lam}{version 2}
+\lecture{2 --- January 7, 2015}{Winter 2015}{Patrick Lam}{version 1}
 
 \section*{Modern Processors}
 
@@ -74,7 +74,7 @@ Misses are expensive!
 
 \paragraph{Forcing branch mispredicts.} It takes a bit of trickery to force branch
 mispredicts. {\tt gcc} extensions allow hinting, but usually {\tt gcc} or the processor
-is smart enough to ignore bad hints. This\footnote{Source: \url{blog.man7.org/2012/10/how-much-do-builtinexpect-likely-and.html}.} works, though:
+is smart enough to ignore bad hints. This\footnote{Source: \url{blog.man7.org/2012/10/how-much-do-builtinexpect-likely-and.html}.} worked last year, though:
 
 {\tiny
 \begin{verbatim}
@@ -102,7 +102,7 @@ is smart enough to ignore bad hints. This\footnote{Source: \url{blog.man7.org/20
         }
 \end{verbatim}
 }
-Running it yields:
+Running it yielded:
 \begin{verbatim}
 plam@plym:~/459$ gcc -O2 likely-simplified.c -DEXPECT_RESULT=0 -o likely-simplified
 plam@plym:~/459$ time ./likely-simplified
@@ -119,7 +119,7 @@ real	0m3.938s
 user	0m3.868s
 sys	0m0.000s
 \end{verbatim}
-
+{\tt gcc} seems to have gotten smart enough to reject bogus hints in the interim.
 
 \section*{Limits to parallelization}
 I mentioned briefly in Lecture 1 that programs often have a sequential
@@ -131,47 +131,50 @@ is Amdahl's Law. In 1967, Gene Amdahl argued that improvements in
 processor design for single processors would be more effective than
 designing multi-processor systems. Here's the argument. Let's say that
 you are trying to run a task which has a serial part, taking fraction 
-$S$, and a parallelizable part, taking fraction $P$. Define $T_s$
+$S$, and a parallelizable part, taking fraction $P = 1-S$. Define $T_s$
 to be the total 
 amount of time needed on a single-processor system.
 Now, moving to a parallel system with $N$ processors, the parallel
 time $T_p$ is instead:
 \[ T_p = T_s \cdot (S + \frac{P}{N}). \]
-{\bf As $N$ increases, $T_p$ is dominated by $S$, limiting the potential
-speedup for a fixed problem size.}
+{\bf As $N$ increases, $T_p$ is dominated by $S$, limiting potential
+speedup.}
 
-We can restate this law in terms of speedup, which is generally the 
+We can restate this law in terms of speedup, which is the 
 original time $T_s$ divided by the sped-up time $T_p$:
-\[ S_p = \frac{T_s}{T_p}. \]
-If we let $f$ be the parallelizable fraction of the computation,
-i.e. set $f$ to $P/T_s$, and we let $S_f$ be the speedup we can achieve on $f$, 
-then we get\footnote{\url{http://www.cs.wisc.edu/multifacet/amdahl/}}:
-\[ S_p(f, S_f) = \frac{1}{(1-f)+\frac{f}{S_f}}. \]
+\[ \mbox{speedup} = \frac{T_s}{T_p} = \frac{1}{S+P/N}. \]
+Replacing $S$ with $(1-P)$, we get:
+\[ \mbox{speedup} = \frac{1}{(1-P)+P/N}, \]
+and
+\[ \mbox{max speedup} = \frac{1}{(1-P)}, \]
+since $\frac{P}{N} \rightarrow 0$.
 
-\paragraph{Plugging in numbers.} If $f = 1$, then we can indeed get good
-scaling, since $S_p = S_f$ in that case; running on an $N$-processor
-machine will give you a speedup of $N$. Unfortunately, usually $f < 1$.
-Let's see what happens.
+\paragraph{Plugging in numbers.} If $P = 1$, then we can indeed get good
+scaling; running on an $N$-processor machine will give you a speedup
+of $N$. Unfortunately, usually $P < 1$.  Let's see what happens.
 
 \begin{center}
 \begin{tabular}{r|r}
-$f$ & $S_p(f, 18)$ \\ \hline
+$P$ & speedup ($N=18$) \\ \hline
 1 & 18 \\
 0.99 & $\sim$ 15 \\
 0.95 & $\sim$ 10 \\
 0.5 & $\sim$ 2
 \end{tabular}
 \end{center}
+Graphically, we have something like this:
+\begin{center}
+  \includegraphics[width=0.5\textwidth]{L02/parallel-scaling}
+\end{center}
 
-To get close to a 2$\times$ speedup for $f = 0.5$, you'd need to use around 18 cores.
 
 Amdahl's Law tells you how many cores you can hope to leverage in an
-execution given a fixed problem size, if you can estimate $f$.
+execution given a fixed problem size, if you can estimate $P$.
 
 \paragraph{Consequences of Amdahl's Law.}
 For over 30 years, most performance gains did indeed come from
 increasing single-processor performance. The main reason that we're
-here today is that, as we saw in the video in Lecture 2,
+here today is that, as we saw in the video,
 single-processor performance gains have hit the wall.
 
 By the way, note that we didn't talk about the cost of synchronization
@@ -180,36 +183,11 @@ between threads here. That can drag the performance down even more.
 \paragraph{Amdahl's Assumptions.}
 Despite Amdahl's pessimism, we still all have multicore computers today.
 Why is that? Amdahl's Law assumes that:
-\vspace*{-1em}
 \begin{itemize}
     \item problem size is fixed (read on);
     \item the program, or the underlying implementation, behaves the same on 1 processor as on $N$ processors; and
     \item that we can accurately measure runtimes---i.e. that overheads don't matter.
 \end{itemize}
-
-
-\subsection*{A more optimistic point of view}
-In 1988, John Gustafson pointed
-out\footnote{\url{http://www.scl.ameslab.gov/Publications/Gus/AmdahlsLaw/Amdahls.html}}
-that Amdahl's Law only applies to fixed-size problems, but that the
-point of computers is to deal with bigger and bigger problems.
-
-In particular, you might vary the input size, or the grid resolution,
-number of timesteps, etc. When running the software, then, you might
-need to hold the running time constant, not the problem size: you're
-willing to wait, say, 10 hours for your task to finish, but not 500
-hours. So you can change the question to: how big a problem can you
-run in 10 hours?
-
-According to Gustafson, scaling up the problem tends to increase the
-amount of work in the parallel part of the code, while leaving the
-serial part alone. As long as the algorithm is linear, it is possible
-to handle linearly larger problems with a linearly larger number of
-processors.
-
-Of course, Gustafson's Law works when there is some ``problem-size''
-knob you can crank up.  As a practical example, observe Google, which
-deals with huge datasets.
 
 
 \end{document}
