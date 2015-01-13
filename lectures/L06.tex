@@ -1,0 +1,180 @@
+\documentclass[11pt]{article}
+\usepackage{listings}
+\usepackage{tikz}
+\usepackage{url}
+%\usepackage{algorithm2e}
+\usetikzlibrary{arrows,automata,shapes,positioning}
+\tikzstyle{block} = [rectangle, draw, fill=blue!20, 
+    text width=2.5em, text centered, rounded corners, minimum height=2em]
+\tikzstyle{bw} = [rectangle, draw, fill=blue!20, 
+    text width=3.5em, text centered, rounded corners, minimum height=2em]
+
+\newcommand{\handout}[5]{
+  \noindent
+  \begin{center}
+  \framebox{
+    \vbox{
+      \hbox to 5.78in { {\bf ECE459: Programming for Performance } \hfill #2 }
+      \vspace{4mm}
+      \hbox to 5.78in { {\Large \hfill #5  \hfill} }
+      \vspace{2mm}
+      \hbox to 5.78in { {\em #3 \hfill #4} }
+    }
+  }
+  \end{center}
+  \vspace*{4mm}
+}
+
+\lstset{basicstyle=\ttfamily \scriptsize}
+
+\newcommand{\lecture}[4]{\handout{#1}{#2}{#3}{#4}{Lecture #1}}
+\topmargin 0pt
+\advance \topmargin by -\headheight
+\advance \topmargin by -\headsep
+\textheight 8.9in
+\oddsidemargin 0pt
+\evensidemargin \oddsidemargin
+\marginparwidth 0.5in
+\textwidth 6.5in
+
+\parindent 0in
+\parskip 1.5ex
+%\renewcommand{\baselinestretch}{1.25}
+
+\begin{document}
+
+\lecture{6 --- January 15, 2015}{Winter 2015}{Patrick Lam}{version 0}
+
+\section*{Synchronization}
+You'll need some sort of synchronization to get sane results from
+multithreaded programs. We'll start by talking about how to use
+mutual exclusion in Pthreads.
+
+\paragraph{Mutual Exclusion.} Mutexes are the most basic type of synchronization.
+As a reminder:
+    \begin{itemize}
+    \item Only one thread can access code protected by a mutex at a time.
+    \item All other threads must wait until the mutex is free before they can
+      execute the protected code.
+    \end{itemize}
+
+    Here's two examples of using mutexes:
+    {\small
+  \begin{minipage}{.55\textwidth}
+  \begin{lstlisting}
+pthread_mutex_t m1_static = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t m2_dynamic;
+
+pthread_mutex_init(&m2_dynamic, NULL);
+...
+pthread_mutex_destroy(&m1_static);
+pthread_mutex_destroy(&m2_dynamic);
+  \end{lstlisting}
+  \end{minipage}
+  \begin{minipage}{.4\textwidth}
+    \begin{lstlisting}[language=C++]
+#include <mutex>
+
+std::mutex m1, m2;
+\end{lstlisting}
+  \end{minipage}
+}
+
+
+You can initialize Pthreads mutexes statically (as with {\tt m1\_static}) or
+dynamically ({\tt m2\_dynamic}). If you want to include attributes,
+you need to use the dynamic version. C++11 mutexes don't need to be explicitly
+destroyed; resources are freed when they go out of scope. They don't seem to have
+attributes.
+
+\paragraph{Mutex Attributes.} Both threads and mutexes use the notion of attributes.
+We won't talk about mutex attributes in any detail, but here are the three standard Pthreads ones.
+  \begin{itemize}
+    \item {\bf Protocol}: specifies the protocol used to prevent priority
+      inversions for a mutex.
+    \item {\bf Prioceiling}: specifies the priority ceiling of a mutex.
+    \item {\bf Process-shared}: specifies the process sharing of a mutex.
+  \end{itemize}
+  You can specify a mutex as {\it process shared} so that you can access it
+  between processes. In that case, you need to use shared memory and {\tt mmap},
+  which we won't get into.
+
+\paragraph{Mutex Example.} Let's see how this looks in practice. It is fairly simple:
+    {\small
+  \begin{minipage}{.55\textwidth}
+  \begin{lstlisting}
+// code
+pthread_mutex_lock(&m1);
+// protected code
+pthread_mutex_unlock(&m1);
+// more code
+  \end{lstlisting}
+  \end{minipage}
+  \begin{minipage}{.4\textwidth}
+    \begin{lstlisting}[language=C++]
+// code
+m1.lock();
+// protected code
+m1.unlock();
+// more code
+    \end{lstlisting}
+  \end{minipage}
+  }
+  \begin{itemize}
+    \item Everything within the {\tt lock} and {\tt unlock} is protected.
+    \item Be careful to avoid deadlocks if you are using multiple mutexes (always
+acquire locks in the same order across threads).
+    \item Another useful primitive is {\tt pthread\_mutex\_trylock}, also known as {\tt ::try\_lock()} in C++11 threads. We may come back to this
+later.
+  \end{itemize}
+
+\subsection*{Data Races}
+Why are we bothering with locks? Data races. A data race occurs when
+two concurrent actions access the same variable and at least one of
+them is a {\bf write}. (This shows up on Assignment 1!)
+
+  \begin{lstlisting}
+...
+static int counter = 0;
+
+void* run(void* arg) {
+    for (int i = 0; i < 100; ++i) {
+        ++counter;
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    // Create 8 threads
+    // Join 8 threads
+    printf("counter = %i\n", counter);
+}
+  \end{lstlisting}
+
+Is there a datarace in this example? If so, how would we fix it?
+
+\paragraph{Solution: use mutexes.}
+  \begin{lstlisting}[escapechar=!]
+...
+!\bf{static pthread\_mutex\_t mutex = PTHREAD\_MUTEX\_INITIALIZER;}!
+static int counter = 0;
+
+void* run(void* arg) {
+    for (int i = 0; i < 100; ++i) {
+        !\bf{pthread\_mutex\_lock(\&mutex);}!
+        ++counter;
+        !\bf{pthread\_mutex\_unlock(\&mutex);}!
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    // Create 8 threads
+    // Join 8 threads
+    !\bf{pthread\_mutex\_destroy(\&mutex);}!
+    printf("counter = %i\n", counter);
+}
+  \end{lstlisting}
+(I'll leave expressing this in C++11 as an exercise to the reader.)
+
+\end{document}
