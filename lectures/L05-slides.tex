@@ -70,32 +70,6 @@ if (pid < 0) {
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}[fragile]
-  \frametitle{Live coding: overheads of threads vs fork}
-\end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}[fragile]
-  \frametitle{Results: Threads Offer a Speedup of 6.5 over {\tt fork}}
-
-  \begin{changemargin}{1cm}
-  Here's a benchmark between {\tt fork} and Pthreads on a laptop, creating and
-  destroying 50,000 threads:
-  \vfill
-  \begin{lstlisting}[basicstyle=\scriptsize]
-jon@riker examples master % time ./create_fork 
-0.18s user 4.14s system 34% cpu 12.484 total
-jon@riker examples master % time ./create_pthread 
-0.73s user 1.29s system 107% cpu 1.887 total
-  \end{lstlisting}
-  \vfill
-  Clearly Pthreads incur much lower overhead than {\tt fork}.
-  \end{changemargin}
-\end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 \section{}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}

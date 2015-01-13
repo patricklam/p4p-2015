@@ -259,4 +259,17 @@ then processes are the way to go. If it's the opposite of this, then use threads
 
 For performance reasons, along with ease and consistency across systems, we'll use threads. We will describe both Pthreads and C++ 11 threads, in particular.
 
+\paragraph{Overhead of Processes vs Threads.} The common wisdom is that processes are
+expensive, threads are cheap. Let's verify this with a benchmark on a
+laptop (included in the live-coding directory) which creates and destroys 50,000 threads:
+  \begin{lstlisting}[basicstyle=\scriptsize]
+jon@riker examples master % time ./create_fork 
+0.18s user 4.14s system 34% cpu 12.484 total
+jon@riker examples master % time ./create_pthread 
+0.73s user 1.29s system 107% cpu 1.887 total
+  \end{lstlisting}
+
+Clearly Pthreads incur much lower overhead than {\tt fork}. Pthreads
+offer a speedup of 6.5 over processes in terms of startup and teardown costs.
+
 \end{document}

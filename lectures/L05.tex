@@ -65,19 +65,6 @@ concurrently after the call.  The only difference between the copies
 is the return value: the parent gets the pid of the child, while the
 child gets 0.
 
-\paragraph{Overhead of Processes.} The common wisdom is that processes are
-expensive, threads are cheap. Let's verify this with a benchmark on a
-laptop which creates and destroys 50,000 threads:
-  \begin{lstlisting}[basicstyle=\scriptsize]
-jon@riker examples master % time ./create_fork 
-0.18s user 4.14s system 34% cpu 12.484 total
-jon@riker examples master % time ./create_pthread 
-0.73s user 1.29s system 107% cpu 1.887 total
-  \end{lstlisting}
-
-Clearly Pthreads incur much lower overhead than {\tt fork}. Pthreads
-offer a speedup of 6.5 over processes in terms of startup and teardown costs.
-
 \section*{Using Threads to Program for Performance}
 We'll start by seeing how to use threads on ``embarrassingly parallel problems'':
   \begin{itemize}
