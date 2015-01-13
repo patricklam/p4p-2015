@@ -1,4 +1,4 @@
-// ECE 459 Lecture 5 live coding
+// ECE 459 Lecture 4 live coding
 // demonstrates startup cost for threads vs forks
 
 #include <stdio.h>
