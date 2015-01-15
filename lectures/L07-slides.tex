@@ -1,0 +1,235 @@
+\documentclass[aspectratio=43]{beamer}
+
+% Text packages to stop warnings
+\usepackage{lmodern}
+\usepackage{textcomp}
+\usepackage{tikz}
+\usepackage{listings}
+
+% Themes
+\usetheme{Boadilla}
+\setbeamertemplate{footline}[page number]{}
+\setbeamertemplate{navigation symbols}{}
+
+% Suppress the navigation bar
+\beamertemplatenavigationsymbolsempty
+
+\lstset{basicstyle=\scriptsize,frame=single}
+
+\newenvironment{changemargin}[1]{% 
+  \begin{list}{}{% 
+    \setlength{\topsep}{0pt}% 
+    \setlength{\leftmargin}{#1}% 
+    \setlength{\rightmargin}{1em}
+    \setlength{\listparindent}{\parindent}% 
+    \setlength{\itemindent}{\parindent}% 
+    \setlength{\parsep}{\parskip}% 
+  }% 
+  \item[]}{\end{list}} 
+
+\title{Lecture 06---More on Threads}
+\subtitle{ECE 459: Programming for Performance}
+\author{Patrick Lam}
+\institute{University of Waterloo}
+\date{January 16, 2015}
+
+\begin{document}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Synchronization}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Mutual Exclusion}
+
+\begin{changemargin}{1.5cm}
+    Mutexes are the most basic type of synchronization.
+    \vfill
+    \begin{itemize}
+    \item Only one thread can access code protected by a mutex at a time.
+    \vfill
+    \item All other threads must wait until the mutex is free before they can
+      execute the protected code.
+    \end{itemize}
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Live Coding Example: Mutual Exclusion}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Creating Mutexes---Pthreads Example}
+
+\begin{changemargin}{1.5cm}
+  \begin{lstlisting}
+pthread_mutex_t m1 = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t m2;
+
+pthread_mutex_init(&m2, NULL);
+...
+pthread_mutex_destroy(&m1);
+pthread_mutex_destroy(&m2);
+  \end{lstlisting}
+
+  \begin{itemize}
+    \item Two ways to initialize mutexes: statically and dynamically
+    \item If you want to include attributes, you need to use the dynamic version
+  \end{itemize}
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Creating Mutexes---C++11 Example}
+
+\begin{changemargin}{1.5cm}
+  \begin{lstlisting}
+#include <mutex>
+
+std::mutex m1, m2;
+  \end{lstlisting}
+
+  Resources released when objects go out of scope.
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Pthreads Mutex Attributes}
+
+\begin{changemargin}{1.5cm}
+  \begin{itemize}
+    \item {\bf Protocol}: specifies the protocol used to prevent priority
+      inversions for a mutex
+    \item {\bf Prioceiling}: specifies the priority ceiling of a mutex
+    \item {\bf Process-shared}: specifies the process sharing of a mutex
+  \end{itemize}
+  You can specify a mutex as {\it process shared} so that you can access it
+  between processes. In that case, you need to use shared memory and {\tt mmap},
+  which we won't get into.
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Using Pthreads Mutexes: Example}
+
+\begin{changemargin}{1.5cm}
+  \begin{lstlisting}
+// code
+pthread_mutex_lock(&m1);
+// protected code
+pthread_mutex_unlock(&m1);
+// more code
+  \end{lstlisting}
+  \vfill
+  \begin{itemize}
+    \item Everything within the {\tt lock} and {\tt unlock} is protected.
+    \item Be careful to avoid deadlocks if you are using multiple mutexes.
+    \item Also you can use {\tt pthread\_mutex\_trylock}, if needed.
+  \end{itemize}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Using C++11 Mutexes: Example}
+
+\begin{changemargin}{1.5cm}
+  \begin{lstlisting}
+// code
+m1.lock()    
+// protected code
+m1.unlock()
+// more code
+  \end{lstlisting}
+  \vfill
+  \begin{itemize}
+    \item Everything within the {\tt lock} and {\tt unlock} is protected.
+    \item Be careful to avoid deadlocks if you are using multiple mutexes.
+    \item Also you can use {\tt mutex::trylock()}, if needed.
+  \end{itemize}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Data Race Example}
+
+\begin{changemargin}{1.5cm}
+  Recall that \structure{dataraces} occur when two concurrent actions access the same
+  variable and at least one of them is a {\bf write}
+
+
+  \begin{lstlisting}
+...
+static int counter = 0;
+
+void* run(void* arg) {
+    for (int i = 0; i < 100; ++i) {
+        ++counter;
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    // Create 8 threads
+    // Join 8 threads
+    printf("counter = %i\n", counter);
+}
+  \end{lstlisting}
+
+Is there a datarace in this example? If so, how would we fix it?
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Example Problem Solution}
+\begin{changemargin}{1.5cm}
+  \begin{lstlisting}[escapechar=!]
+...
+!\structure{static pthread\_mutex\_t mutex = PTHREAD\_MUTEX\_INITIALIZER;}!
+static int counter = 0;
+
+void* run(void* arg) {
+    for (int i = 0; i < 100; ++i) {
+        !\structure{pthread\_mutex\_lock(\&mutex);}!
+        ++counter;
+        !\structure{pthread\_mutex\_unlock(\&mutex);}!
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    // Create 8 threads
+    // Join 8 threads
+    !\structure{pthread\_mutex\_destroy(\&mutex);}!
+    printf("counter = %i\n", counter);
+}
+  \end{lstlisting}
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\end{document}
