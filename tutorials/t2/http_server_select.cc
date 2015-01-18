@@ -5,7 +5,7 @@ void HTTPServerSelect::start_serving(){
 		return;
 	}
 
-	int client_sock, fdmax;
+	int client_sock, fd_max;
 	fd_set sock_fds, read_fds;
 	
 	FD_ZERO( &sock_fds );

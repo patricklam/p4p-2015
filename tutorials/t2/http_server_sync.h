@@ -1,9 +1,9 @@
 #include "http_server_base.h"
 
-class HTTPServerSync : HTTPServerBase {
+class HTTPServerSync : public HTTPServerBase {
  public:
 	void start_serving();
 
-	HTTPServerBlock( int port ) : 
+	HTTPServerSync( int port ) : 
 		HTTPServerBase( port ) { }
 };

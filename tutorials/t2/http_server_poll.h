@@ -3,7 +3,7 @@
 
 #include "http_server_base.h"
 
-class HTTPServerPoll : HTTPServerBase {
+class HTTPServerPoll : public HTTPServerBase {
  public:
 	void start_serving();
 

@@ -2,7 +2,9 @@
 
 #include "http_server_base.h"
 
-class HTTPServerEpoll : HTTPServerBase {
+#define EPOLL_QUEUE_LEN 256
+
+class HTTPServerEpoll : public HTTPServerBase {
  public:
 	void start_serving();
 

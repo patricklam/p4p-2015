@@ -1,6 +1,6 @@
 #include "http_server_base.h"
 
-class HTTPServerSelect : HTTPServerBase {
+class HTTPServerSelect : public HTTPServerBase {
  public:
 	void start_serving();
 

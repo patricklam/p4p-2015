@@ -5,19 +5,24 @@
  * All rights reserved.
  */
 
-#define HTTP_RESPONSE "HTTP/1.1 200 OK\r\n" \ 
-"Content-Type: text/html; charset=UTF-8\r\n" \
-"Server: SimpleHTTPServer" \
+#define HTTP_RESPONSE "HTTP/1.0 200 OK\r\n"\ 
+"Content-Type: text/html; charset=UTF-8\r\n"\
+"Server: SimpleHTTPServer\r\n"\
 "Hello World!\r\n"
 
 #include <cstdlib>
+#include <cstring>
+
+#include <iostream>
+
+#include <unistd.h>
 #include <netdb.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-class SimpleHTTPServerBase{
+class HTTPServerBase{
  protected:
 	int port;
 	int server_sock;
@@ -28,6 +33,7 @@ class SimpleHTTPServerBase{
 	int process_client( int );
 
  public:
+	void shutdown_server();
 	virtual void start_serving() = 0;
-	SimpleHTTPServerBase( int );
+	HTTPServerBase( int );
 };

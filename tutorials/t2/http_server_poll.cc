@@ -13,6 +13,7 @@ void HTTPServerPoll::start_serving(){
 	
 	sock_fds.push_back( server_pfd );
 
+	int client_sock;
 	while( true ){	
 		int ret = poll( &sock_fds[0], sock_fds.size(), -1 );
 
