@@ -26,7 +26,7 @@
   }% 
   \item[]}{\end{list}} 
 
-\title{Lecture 07---A1; Race Conditions;\\ More Synchronization; Async I/O}
+\title{Lecture 07---Async I/O; Race Conditions; More Synchronization}
 \date{January 19, 2015}
 
 \begin{document}
@@ -34,6 +34,54 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}[plain]
   \titlepage
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Roadmap}
+
+  \Large
+    \begin{changemargin}{2cm}
+  Past: Modern Hardware, Threads; \\[1em]
+
+  Now: Non-blocking I/O;\\[1em]
+
+  Next: Race Conditions, Locking.
+    \end{changemargin}
+  
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Last Time}
+
+  \begin{changemargin}{2.5cm}
+  \begin{itemize}
+    \item Assignment 1 walkthrough.
+    \item Concept behind non-blocking I/O.
+  \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\part{Async I/O with epoll}
+\frame{\partpage}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Using {\tt epoll}}
+  \begin{changemargin}{2em}
+    Key idea: give {\tt epoll} a bunch of file descriptors;\\
+     \hspace*{2em}wait for events to happen.\\[1em]
+
+     Steps:
+     \begin{enumerate}
+       \item create an instance ({\tt epoll\_create1});
+       \item populate it with file descriptors ({\tt epoll\_ctl});
+       \item wait for events ({\tt epoll\_wait}).
+     \end{enumerate}
+  \end{changemargin}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -104,10 +152,13 @@ Upon return from {\tt epoll\_wait}, we have {\tt nr\_events} events ready.
 
     Can also specify (via {\tt epoll\_ctl}) \structure{edge-triggered} behaviour:\\
     \quad return whenever there is a change in readiness.\\[1em]
-
-    We'll see an example next time.
-
   \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Live Coding: Level-Triggered vs Edge-Triggered}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -146,6 +197,259 @@ Upon return from {\tt epoll\_wait}, we have {\tt nr\_events} events ready.
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+\part{Using curl\_multi}
+\frame{\partpage}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{curl\_multi initialization}
+
+  \begin{changemargin}{2cm}
+    curl\_multi: work with multiple resources at once.\\[1em]
+
+    How? Similar idea to {\tt epoll}:\\[1em]
+
+    1. To use {\tt curl\_multi}, first create the individual requests \\ \hspace{2em} ({\tt curl\_easy\_init}).\\
+    ~~~(Set options as needed on each handle).\\[1em]
+
+    2. Then, combine them with:
+    \begin{itemize}
+      \item {\tt curl\_multi\_init()};
+      \item {\tt curl\_multi\_add\_handle()}.
+    \end{itemize}
+
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{curl\_multi\_perform: option 1, select-based interface}
+
+  \begin{changemargin}{1.5cm}
+    Main idea: put in requests and wait for results.\\[1em]
+
+    {\tt curl\_multi\_perform} is a generalization of {\tt curl\_easy\_perform} to multiple resources.\\[1em]
+
+    Handle completed transfers with {\tt curl\_multi\_info\_read}.
+
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{calling curl\_multi\_perform}
+
+  \begin{changemargin}{2cm}
+    perform interface requires use of {\tt select} (not {\tt epoll}).\\[1em]
+
+    usage (once you've {\tt curl\_multi\_add\_handle}'d):\\[.5em]
+    \hspace*{-2em} {\tt curl\_multi\_perform(multi\_handle, \&still\_running)}\\[.5em]
+    performs a non-blocking read/write, and\\
+    returns the number of still-active handles\\ \hspace*{2em} (with more data to come).
+
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Next steps after curl\_multi\_perform}
+
+  \begin{changemargin}{2cm}
+    do
+    \begin{itemize}
+      \item organize a call to {\tt select}; and
+      \item call {\tt curl\_multi\_perform} again
+    \end{itemize}
+    while there are still running transfers.\\[1em]
+
+    After the {\tt curl\_multi\_perform}, you can also delete, alter,
+    and re-add an {\tt curl\_easy\_handle} when a transfer finishes.
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Before calling {\tt select}}
+
+  \begin{changemargin}{2cm}
+    {\tt select} needs a timeout and an {\tt fdset}. \\
+    \qquad ({\tt curl} provides both.)\\[1em]
+
+    Initializing the {\tt fdset} from the {\tt multi\_handle}:
+  \end{changemargin}
+
+\begin{lstlisting}
+    // zero the fd-sets
+    FD_ZERO(&fdread); FD_ZERO(&fdwrite); FD_ZERO(&fdexcep);
+    // retrieve the fds, check for error
+    curl_multi_fdset(multi_handle, 
+                     &fdread, &fdwrite, &fdexcep, &maxfd);
+    if (maxfd < -1) abort_("multi_fdset: couldn't wait for fds");
+\end{lstlisting}
+
+  \begin{changemargin}{2cm}
+    Retrieving the proper timeout:
+  \end{changemargin}
+\begin{lstlisting}
+    curl_multi_timeout(multi_handle, &curl_timeout);
+\end{lstlisting}
+  \begin{changemargin}{2cm}
+    (and then convert the {\tt long} to a {\tt struct timeval}).
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{The call to {\tt select}}
+
+\begin{lstlisting}
+  rc = select(maxfd + 1, &fdread, &fdwrite, &fdexcep, &timeout);
+  if (rc == -1) abort_("[main] select error");
+\end{lstlisting}
+
+  \begin{changemargin}{2cm}
+    Wait for one of the fds to become ready,\\ ~~or for timeout to elapse. \\[1em]
+    What next?\\
+    \only<2>{Call {\tt curl\_multi\_perform} again to do the work.}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Knowing what happened after {\tt curl\_multi\_perform}}
+
+  \begin{changemargin}{2cm}
+    {\tt curl\_multi\_info\_read} will tell you.
+  \end{changemargin}
+\begin{lstlisting}
+  msg = curl_multi_info_read(multi_handle, &msgs_left);
+\end{lstlisting}
+  \begin{changemargin}{2cm}
+    and also how many messages are left.\\[1em]
+    {\tt msg->msg} can be {\tt CURLMSG\_DONE} or an error;\\
+    {\tt msg->easy\_handle} tells you who is done.
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{curl\_multi cleanup}
+
+  \begin{changemargin}{2cm}
+    Call {\tt curl\_multi\_cleanup} on the multi handle.\\[1em]
+    Then, call {\tt curl\_easy\_cleanup} on each easy handle.
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{curl\_multi\_perform example}
+
+  \begin{changemargin}{1.5cm}
+    Not a great example:
+
+\begin{center}
+\url{http://curl.haxx.se/libcurl/c/multi-app.html}
+\end{center}
+
+    I'm not even sure it works verbatim.\\[1em]
+
+    Nevertheless, you could use it as a solution template.\\
+    You'll have to add more code to replace completed transfers.
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{curl\_multi, option 2: curl\_multi\_socket\_action}
+
+  \begin{changemargin}{1.5cm}
+    So, I couldn't quite figure out how this works. Sorry.\\[1em]
+
+    Similar to the {\tt perform} interface, but you have more control.
+
+    Advantage:
+
+\begin{quote}
+   2 - When the application discovers action on a single socket, it calls
+       libcurl and informs that there was action on this particular socket and
+       libcurl can then act on that socket/transfer only and not care about
+       any other transfers. (The previous API always had to scan through all
+       the existing transfers.)
+\end{quote}
+
+\url{http://curl.haxx.se/dev/readme-multi_socket.html}
+
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+
+  \frametitle{multi\_socket usage}
+
+\begin{changemargin}{1cm}
+From the manpage:
+\small
+\begin{itemize}
+\item Create a multi handle
+
+\item Set the socket callback with {\tt CURLMOPT\_SOCKETFUNCTION}
+
+\item Set the timeout callback with {\tt CURLMOPT\_TIMERFUNCTION}, to get to know what timeout value to use when waiting for socket activities.
+
+\item Add easy handles with {\tt curl\_multi\_add\_handle()}
+
+\item Provide some means to manage the sockets libcurl is using, so you can check them for activity. This can be done through your application code, or by way of an external library such as libevent or glib.
+
+\item Call {\tt curl\_multi\_socket\_action(..., CURL\_SOCKET\_TIMEOUT, 0, ...)} to kickstart everything. To get one or more callbacks called.
+
+\item Wait for activity on any of libcurl's sockets, use the timeout value your callback has been told.
+
+\item When activity is detected, call {\tt curl\_multi\_socket\_action()} for the socket(s) that got action. If no activity is detected and the timeout expires, call {\tt curl\_multi\_socket\_action(3)} with {\tt CURL\_SOCKET\_TIMEOUT}. 
+\end{itemize}
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+
+  \frametitle{multi\_socket example}
+
+\begin{changemargin}{2cm}
+This example is even worse than the last one:
+\begin{center}
+\url{http://curl.haxx.se/libcurl/c/hiperfifo.html}
+\end{center}~\\[1em]
+It contains more moving parts than we need to understand the API, and gets
+another library ({\tt libevent}) involved.
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \part{Race Conditions}
@@ -354,4 +658,430 @@ R2 & R1 & W1 & W2 & 3 \\
   \end{changemargin}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\section{Synchronization}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Mutual Exclusion}
+
+\begin{changemargin}{1.5cm}
+    Mutexes are the most basic type of synchronization.
+    \vfill
+    \begin{itemize}
+    \item Only one thread can access code protected by a mutex at a time.
+    \vfill
+    \item All other threads must wait until the mutex is free before they can
+      execute the protected code.
+    \end{itemize}
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Live Coding Example: Mutual Exclusion}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Creating Mutexes---Example}
+
+\begin{changemargin}{1.5cm}
+  \begin{lstlisting}
+pthread_mutex_t m1 = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t m2;
+
+pthread_mutex_init(&m2, NULL);
+...
+pthread_mutex_destroy(&m1);
+pthread_mutex_destroy(&m2);
+  \end{lstlisting}
+
+  \begin{itemize}
+    \item Two ways to initialize mutexes: statically and dynamically
+    \item If you want to include attributes, you need to use the dynamic version
+  \end{itemize}
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Mutex Attributes}
+
+\begin{changemargin}{1.5cm}
+  \begin{itemize}
+    \item {\bf Protocol}: specifies the protocol used to prevent priority
+      inversions for a mutex
+    \item {\bf Prioceiling}: specifies the priority ceiling of a mutex
+    \item {\bf Process-shared}: specifies the process sharing of a mutex
+  \end{itemize}
+  You can specify a mutex as {\it process shared} so that you can access it
+  between processes. In that case, you need to use shared memory and {\tt mmap},
+  which we won't get into.
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Using Mutexes: Example}
+
+\begin{changemargin}{1.5cm}
+  \begin{lstlisting}
+// code
+pthread_mutex_lock(&m1);
+// protected code
+pthread_mutex_unlock(&m1);
+// more code
+  \end{lstlisting}
+  \vfill
+  \begin{itemize}
+    \item Everything within the {\tt lock} and {\tt unlock} is protected.
+    \item Be careful to avoid deadlocks if you are using multiple mutexes.
+    \item Also you can use {\tt pthread\_mutex\_trylock}, if needed.
+  \end{itemize}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Data Race Example}
+
+\begin{changemargin}{1.5cm}
+  Recall that \structure{dataraces} occur when two concurrent actions access the same
+  variable and at least one of them is a {\bf write}
+
+
+  \begin{lstlisting}
+...
+static int counter = 0;
+
+void* run(void* arg) {
+    for (int i = 0; i < 100; ++i) {
+        ++counter;
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    // Create 8 threads
+    // Join 8 threads
+    printf("counter = %i\n", counter);
+}
+  \end{lstlisting}
+
+Is there a datarace in this example? If so, how would we fix it?
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Example Problem Solution}
+\begin{changemargin}{1.5cm}
+  \begin{lstlisting}[escapechar=!]
+...
+!\structure{static pthread\_mutex\_t mutex = PTHREAD\_MUTEX\_INITIALIZER;}!
+static int counter = 0;
+
+void* run(void* arg) {
+    for (int i = 0; i < 100; ++i) {
+        !\structure{pthread\_mutex\_lock(\&mutex);}!
+        ++counter;
+        !\structure{pthread\_mutex\_unlock(\&mutex);}!
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    // Create 8 threads
+    // Join 8 threads
+    !\structure{pthread\_mutex\_destroy(\&mutex);}!
+    printf("counter = %i\n", counter);
+}
+  \end{lstlisting}
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\part{More Synchronization}
+\frame{\partpage}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Mutexes Recap}
+
+  \begin{changemargin}{2.5cm}
+     Our focus is on \structure{how to use mutexes correctly}:
+  \begin{itemize}
+    \item Call {\tt lock} on mutex {\tt m1}. Upon return from
+      {\tt lock}, you have exclusive access to {\tt m1} until you
+      {\tt unlock} it.
+    \item Other calls to {\tt lock} {\tt m1} will not return
+      until {\tt m1} is available.
+    \end{itemize}
+    For background on selection algorithms, look at
+      \href{http://en.wikipedia.org/wiki/Lamport\%27s_bakery_algorithm}
+      {Lamport's bakery algorithm}. \\ (Not in scope for this
+      course.)
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{More on Mutexes}
+
+  \begin{changemargin}{2.5cm}
+     Can also ``try-lock'': grab lock if available, else return
+     to caller (and do something else).\\[1em]
+
+     Excessive use of locks can serialize programs. 
+\begin{itemize}
+\item Linux kernel used to
+rely on a Big Kernel Lock protecting lots of resources in the 2.0 era.
+\item Linux 2.2 improved performance on SMPs by cutting down on the use
+of the BKL.
+\end{itemize}~\\[1em]
+
+Note: in Windows, ``mutex'' is an inter-process
+communication mechanism. Windows ``critical sections'' are our mutexes.
+
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Spinlocks}
+
+  \begin{changemargin}{2.5cm}
+    Functionally equivalent to {\tt mutex}.
+
+  \begin{itemize}
+    \item  {\tt pthread\_spinlock\_t},
+      {\tt pthread\_spin\_lock}, {\tt pthread\_spin\_trylock} and friends
+  \end{itemize}
+ 
+    \vfill
+    Implementation difference: spinlocks will repeatedly try the lock and will not put
+      the thread to sleep.
+    \vfill
+    Good if your protected code is short.
+    \vfill
+    Mutexes may be implemented as a combination between spinning and sleeping
+      (spin for a short time, then sleep).
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Read-Write Locks}
+
+  \begin{changemargin}{2.5cm}
+  Two observations:
+  \begin{itemize}
+    \item If there are only reads, there's no datarace.
+    \item Often, writes are relatively rare.
+  \end{itemize}
+  With mutexes/spinlocks, you have to lock the data, even for a read,
+      since a write could happen.\\[1em]
+
+  But, most of the time, reads can happen in parallel, as long as
+      there's no write.\\[1em]
+
+  Solution: Multiple threads can hold a read lock\\ \hspace*{2em} ({\tt pthread\_rwlock\_rdlock})\\
+      but only one thread may hold the associated write lock\\ \hspace*{2em} ({\tt pthread\_rwlock\_wrlock});\\
+      grabbing the write waits until  current readers are done.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Semaphores}
+
+  \begin{changemargin}{2cm}
+    Semaphores have a {\tt value}.
+      You specify initial {\tt value}.\\[1em]
+    Semaphores allow sharing of a \# of instances of a resource.\\[1em]
+    Two fundamental operations: {\tt wait} and {\tt post}.\\[1em]
+  \begin{itemize}
+    \item {\tt wait} is like {\tt lock}; reserves the resource and decrements the value.
+      \begin{itemize}
+        \item If value is 0, sleep until value is greater than 0.
+      \end{itemize}
+    \item {\tt post} is like {\tt unlock}; releases the resource and increments the value.
+  \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Barriers}
+
+  \begin{changemargin}{2.5cm}
+    Allows you to ensure that (some subset of) a collection 
+    of threads all reach the barrier before finishing.\\[1em]
+
+    Pthreads: A barrier is a {\tt pthread\_barrier\_t}.\\[1em]
+
+    Functions: {\tt \_init()} (parameter: how many threads the barrier
+    should wait for) and {\tt \_destroy()}.\\[1em]
+
+    Also {\tt \_wait()}: similar to {\tt pthread\_join()}, but waits
+      for the specified number of threads to arrive at the barrier
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Lock-Free Algorithms}
+
+  \begin{changemargin}{2.5cm}
+    We'll talk more about this in a few weeks.\\[1em]
+
+    Modern CPUs support atomic operations, such as compare-and-swap, which
+enable experts to write lock-free code.\\[1em]
+
+    Lock-free implementations are extremely complicated and must still contain certain synchronization constructs.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Semaphores Usage}
+  
+  \begin{changemargin}{1cm}
+  \begin{lstlisting}
+#include <semaphore.h>
+
+int sem_init(sem_t *sem, int pshared, unsigned int value);
+int sem_destroy(sem_t *sem);
+int sem_post(sem_t *sem);
+int sem_wait(sem_t *sem);
+int sem_trywait(sem_t *sem);
+  \end{lstlisting}
+
+  \begin{itemize}
+    \item Also must link with {\tt -pthread} (or {\tt -lrt} on Solaris).
+    \item All functions return {\tt 0} on success.
+    \item Same usage as mutexes in terms of passing pointers.
+  \end{itemize}~\\[1em]
+    How could you use as {\tt semaphore} as a {\tt mutex}?
+    \begin{itemize}
+    \item<2-> If the initial {\tt value} is 1 and you use {\tt wait} to lock
+      and {\tt post} to unlock, it's equivalent to a {\tt mutex}.
+    \end{itemize}
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Semaphores for Signalling}
+
+  \begin{changemargin}{1cm}
+  Here's an example from the book. How would you make this always print
+  ``Thread 1'' then ``Thread 2'' using semaphores?
+
+  \begin{lstlisting}
+#include <pthread.h>
+#include <stdio.h>
+#include <semaphore.h>
+#include <stdlib.h>
+
+void* p1 (void* arg) { printf("Thread 1\n"); }
+
+void* p2 (void* arg) { printf("Thread 2\n"); }
+
+int main(int argc, char *argv[])
+{
+    pthread_t thread[2];
+    pthread_create(&thread[0], NULL, p1, NULL);
+    pthread_create(&thread[1], NULL, p2, NULL);
+    pthread_join(thread[0], NULL);
+    pthread_join(thread[1], NULL);
+    return EXIT_SUCCESS;
+}
+  \end{lstlisting}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Semaphores for Signalling}
+
+  \begin{changemargin}{1cm}
+  Here's their solution. Is it actually correct?
+
+  \begin{lstlisting}
+sem_t sem;
+void* p1 (void* arg) {
+  printf("Thread 1\n");
+  sem_post(&sem);
+}
+void* p2 (void* arg) {
+  sem_wait(&sem);
+  printf("Thread 2\n");
+}
+
+int main(int argc, char *argv[])
+{
+    pthread_t thread[2];
+    sem_init(&sem, 0, /* value: */ 1);
+    pthread_create(&thread[0], NULL, p1, NULL);
+    pthread_create(&thread[1], NULL, p2, NULL);
+    pthread_join(thread[0], NULL);
+    pthread_join(thread[1], NULL);
+    sem_destroy(&sem);
+}
+  \end{lstlisting}
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Semaphores for Signalling}
+
+  
+  \begin{changemargin}{1cm}
+  \begin{enumerate}
+    \item {\tt value} is initially 1.
+    \vfill
+    \item Say {\tt p2} hits its {\tt sem\_wait} first and succeeds.
+    \vfill
+    \item {\tt value} is now 0 and {\tt p2} prints ``Thread 2'' first.
+  \end{enumerate}
+  \begin{itemize}
+    \item If {\tt p1} happens first, it would just increase
+      {\tt value} to 2.\vfill
+    \item<2-> Fix: set the initial {\tt value} to \alert{0}.\\[1em]
+Then, if {\tt p2} hits its {\tt sem\_wait} first, it will
+      not print until {\tt p1} posts (and prints ``Thread 1'') first.
+  \end{itemize}~\\[1em]
+
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 \end{document}
