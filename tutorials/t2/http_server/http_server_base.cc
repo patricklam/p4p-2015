@@ -10,26 +10,32 @@ HTTPServerBase::HTTPServerBase( int port ) :
 }
 
 int HTTPServerBase::create_bind_listen(){
+	return create_bind_listen( false );
+}
+
+int HTTPServerBase::create_bind_listen( bool is_nonblock ){
 	//create socket
 	server_sock = socket( AF_INET, SOCK_STREAM, 0 );
 	if( server_sock < 0 ){
-		std::cerr << "error creating server socket" << std::endl;
+		perror( "socket" );
 		return -1;
 	}
+	
+	if( is_nonblock )	make_nonblock( server_sock );
 
 	//bind socket with addr
 	int ret = bind( server_sock, 
 		(struct sockaddr *) &server_addr, sizeof(server_addr) );
 
 	if( ret < 0 ){
-		std::cerr << "error binding server socket" << std::endl;
+		perror( "bind" );
 		close( server_sock );
 		return -1;
 	}
 
 	ret = listen( server_sock, 5 );
 	if( ret < 0 ){
-		std::cerr << "error listening on server socket" << std::endl;
+		perror( "listen" );
 		close( server_sock );
 		return -1;
 	}
@@ -47,9 +53,22 @@ int HTTPServerBase::accept_client() {
 		(struct sockaddr *) &client_addr, &client_addr_len );
 
 	if( client_sock < 0 ){
-		std::cerr << "error accepting client" << std::endl;
+		if( errno == EWOULDBLOCK )	return 0;
+		
+		perror( "accept" );
 		return -1;
 	}
+
+	return client_sock;
+}
+
+int HTTPServerBase::accept_client_nonblock(){
+	int client_sock = accept_client();
+	if( client_sock <= 0 ){	
+		return client_sock;
+	}
+
+	make_nonblock( client_sock );
 
 	return client_sock;
 }
@@ -57,11 +76,23 @@ int HTTPServerBase::accept_client() {
 int HTTPServerBase::process_client( int client_sock ){
 	char buf[1024];
 	int nb_recv = recv( client_sock, buf, 1024, 0 );
-	if( nb_recv <= 0 )	return -1;
+	if( nb_recv == 0 )	return -1;
+
+	if( nb_recv < 0 ) {
+		if( errno == EWOULDBLOCK )	return 0;
+		
+		return -1;
+	}
 
 	int nb_send = send( client_sock, HTTP_RESPONSE, sizeof(HTTP_RESPONSE), 0 );
 	
-	return (nb_send > 0) ? 0 : -1;
+	return ( (nb_send > 0) ? 1 : -1 );
+}
+
+int HTTPServerBase::make_nonblock( int sockfd ){
+	int flags = fcntl( sockfd, F_GETFL, 0 );
+	flags |= O_NONBLOCK;
+	return fcntl( sockfd, F_SETFL, flags );
 }
 
 void HTTPServerBase::shutdown_server() {

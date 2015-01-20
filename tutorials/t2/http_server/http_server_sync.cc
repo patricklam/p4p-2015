@@ -11,11 +11,13 @@ void HTTPServerSync::start_serving(){
 		//accept a client
 		client_sock = accept_client();
 		
-		if( client_sock < 0 )	continue;
+		if( client_sock < 0 ){
+			return;
+		}
 
 		while( true ){
 			//either error/remote close
-			if( process_client(client_sock) == -1 ){
+			if( process_client(client_sock) < 0 ){
 				close( client_sock );
 				break;
 			}

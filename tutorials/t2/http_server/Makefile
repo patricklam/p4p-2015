@@ -1,4 +1,4 @@
-CXXFLAGS?=-std=c++11 -D_GNU_SOURCE -Wall -MP -MMD -O2 -g
+CXXFLAGS?=-std=c++11 -D_GNU_SOURCE -Wall -MP -MMD -g
 
 default: all
 

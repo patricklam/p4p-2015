@@ -6,9 +6,10 @@
  */
 
 #define HTTP_RESPONSE "HTTP/1.1 200 OK\r\n"\ 
+"Content-Length: 13\r\n"\
 "Content-Type: text/html\r\n"\
 "Server: SimpleHTTPServer\r\n\r\n"\
-"Hello World!\r\n"
+"Hello World!"
 
 #include <cstdlib>
 #include <cstring>
@@ -17,6 +18,7 @@
 
 #include <unistd.h>
 #include <netdb.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -28,10 +30,12 @@ class HTTPServerBase{
 	int server_sock;
 	struct sockaddr_in server_addr;
 	
+	int create_bind_listen(bool);
 	int create_bind_listen();
 	int accept_client();
+	int accept_client_nonblock();
 	int process_client( int );
-
+	int make_nonblock( int );
  public:
 	void shutdown_server();
 	virtual void start_serving() = 0;

@@ -1,7 +1,7 @@
 #include "http_server_select.h"
 
 void HTTPServerSelect::start_serving(){
-	if( create_bind_listen() < 0 ){
+	if( create_bind_listen(true) < 0 ){
 		return;
 	}
 
@@ -17,8 +17,8 @@ void HTTPServerSelect::start_serving(){
 		//make a copy of sock_fds
 		read_fds = sock_fds;
 		
-		if( select(fd_max+1, &read_fds, NULL, NULL, NULL) == -1 ){
-			std::cerr << "error selecting" << std::endl;
+		if( select(fd_max+1, &read_fds, NULL, NULL, NULL) < 0 ){
+			perror( "select" );
 			return;
 		}
 		
@@ -27,23 +27,24 @@ void HTTPServerSelect::start_serving(){
 			if( FD_ISSET(i, &read_fds) ){
 				if( i == server_sock ){
 					//server_sock is ready to accept
-					client_sock = accept_client();
-					if( client_sock < 0 )	continue;
+					client_sock = accept_client_nonblock();
+					if( client_sock < 0 )	return;
+					if( client_sock == 0 )	continue;
 					else{
 						//add client_sock to sock_fds
 						FD_SET( client_sock, &sock_fds );
 						if( client_sock > fd_max ){ fd_max = client_sock; }
 					}
 				}
-			}
 
-			else{
-				//either error / remote close
-				//remove from select queue
-				if( process_client( i ) < 0 );{
-					FD_CLR( i, &sock_fds );
-					close( i );
-				}	
+				else{
+					//either error / remote close
+					//remove from select queue
+					if( process_client( i ) < 0 ){
+						FD_CLR( i, &sock_fds );
+						close( i );
+					}	
+				}
 			}
 		}
 	}

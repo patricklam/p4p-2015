@@ -1,7 +1,7 @@
 #include "http_server_poll.h"
 
 void HTTPServerPoll::start_serving(){
-	if( create_bind_listen() < 0 ){
+	if( create_bind_listen(true) < 0 ){
 		return;
 	}
 	
@@ -23,17 +23,15 @@ void HTTPServerPoll::start_serving(){
 		}
 	
 		//now check for sock_fds
-		for( std::vector<struct pollfd>::iterator it = sock_fds.begin(); 
-			it != sock_fds.end(); ++it ) {
-			//current sock not active
-			if( (*it).revents == 0 ){ continue; }
+		for( auto it = sock_fds.begin(); it != sock_fds.end(); ++it ) {
 			//we only care about fds that are ready to read
-			if( !((*it).revents & POLLIN) ){ continue; }
+			if( !((*it).revents & POLLIN) )	continue; 
 
 			if( (*it).fd == server_sock ){
 				//server_sock is ready to accept
-				client_sock = accept_client();
-				if( client_sock < 0 )	continue;
+				client_sock = accept_client_nonblock();
+				if( client_sock < 0 )	return;
+				if( client_sock == 0 )	continue;
 				else{
 					//add client_sock to sock_fds
 					struct pollfd client_pfd;
@@ -49,8 +47,11 @@ void HTTPServerPoll::start_serving(){
 				//remove from poll queue	
 				if( process_client( (*it).fd ) < 0 ){
 					close( (*it).fd );
-					sock_fds.erase( it );
-					--it;
+					//delete the fd from vector
+					std::iter_swap( sock_fds.end()-1, it );
+					sock_fds.pop_back();
+
+					if( it == sock_fds.end() )	break;
 				}
 			}
 		}
