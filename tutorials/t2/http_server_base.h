@@ -5,9 +5,9 @@
  * All rights reserved.
  */
 
-#define HTTP_RESPONSE "HTTP/1.0 200 OK\r\n"\ 
-"Content-Type: text/html; charset=UTF-8\r\n"\
-"Server: SimpleHTTPServer\r\n"\
+#define HTTP_RESPONSE "HTTP/1.1 200 OK\r\n"\ 
+"Content-Type: text/html\r\n"\
+"Server: SimpleHTTPServer\r\n\r\n"\
 "Hello World!\r\n"
 
 #include <cstdlib>

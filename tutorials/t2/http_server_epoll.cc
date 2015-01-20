@@ -40,11 +40,14 @@ void HTTPServerEpoll::start_serving(){
 				}		
 			}
 
-			else{
-				//client_sock is ready to read
-				process_client( events[i].data.fd );
-				//This doesn't work in kernel version < 2.6.9
-				epoll_ctl( epfd, EPOLL_CTL_DEL, events[i].data.fd, NULL );
+			else{ //client_sock is ready to read
+				//either error or remote close
+				//remove from epoll queue
+				if( process_client( events[i].data.fd ) < 0 ){
+					//This doesn't work in kernel version < 2.6.9
+					epoll_ctl( epfd, EPOLL_CTL_DEL, events[i].data.fd, NULL );
+					close( events[i].data.fd );
+				}
 			}
 		}
 	}

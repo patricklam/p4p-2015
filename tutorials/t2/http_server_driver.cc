@@ -34,6 +34,10 @@ int main( int argc, char* argv[] ){
 		std::cerr<<"SIGINT Handler error"<<std::endl;
 	}
 
+	if( signal(SIGTERM, sig_handler) == SIG_ERR ){
+		std::cerr<<"SIGTERM Handler error"<<std::endl;
+	}
+
 	if( argc != 2 ){
 		std::cerr << "Usage: ./server PORT_NUMBER" << std::endl;
 		exit( EXIT_FAILURE );

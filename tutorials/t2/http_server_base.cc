@@ -56,13 +56,12 @@ int HTTPServerBase::accept_client() {
 
 int HTTPServerBase::process_client( int client_sock ){
 	char buf[1024];
-	recv( client_sock, buf, 1024, 0 );
-	send( client_sock, HTTP_RESPONSE, sizeof(HTTP_RESPONSE), 0 );
-	
-	//only support HTTP 1.0, close socket after one round-trip.	
-	close( client_sock );
+	int nb_recv = recv( client_sock, buf, 1024, 0 );
+	if( nb_recv <= 0 )	return -1;
 
-	return 0;
+	int nb_send = send( client_sock, HTTP_RESPONSE, sizeof(HTTP_RESPONSE), 0 );
+	
+	return (nb_send > 0) ? 0 : -1;
 }
 
 void HTTPServerBase::shutdown_server() {

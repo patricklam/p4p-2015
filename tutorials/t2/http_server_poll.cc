@@ -43,11 +43,15 @@ void HTTPServerPoll::start_serving(){
 				}		
 			}
 
-			else{
-				//client_sock is ready to read
-				process_client( (*it).fd );
-				sock_fds.erase( it );
-				--it;
+			else{ //client_sock is ready to read
+				
+				//either error / remote close
+				//remove from poll queue	
+				if( process_client( (*it).fd ) < 0 ){
+					close( (*it).fd );
+					sock_fds.erase( it );
+					--it;
+				}
 			}
 		}
 	}

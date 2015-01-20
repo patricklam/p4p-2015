@@ -32,15 +32,18 @@ void HTTPServerSelect::start_serving(){
 					else{
 						//add client_sock to sock_fds
 						FD_SET( client_sock, &sock_fds );
-						if( client_sock > fd_max ){	fd_max = client_sock; }
+						if( client_sock > fd_max ){ fd_max = client_sock; }
 					}
 				}
 			}
 
 			else{
-				//client_sock is ready to read
-				process_client( i );
-				FD_CLR( i, &sock_fds );	
+				//either error / remote close
+				//remove from select queue
+				if( process_client( i ) < 0 );{
+					FD_CLR( i, &sock_fds );
+					close( i );
+				}	
 			}
 		}
 	}
