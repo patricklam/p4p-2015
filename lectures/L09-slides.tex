@@ -1,0 +1,757 @@
+\documentclass[aspectratio=43]{beamer}
+
+% Text packages to stop warnings
+\usepackage{lmodern}
+\usepackage{textcomp}
+\usepackage{listings}
+\usepackage{multirow}
+
+% Themes
+\usetheme{Boadilla}
+\setbeamertemplate{footline}[page number]{}
+\setbeamertemplate{navigation symbols}{}
+
+% Suppress the navigation bar
+\beamertemplatenavigationsymbolsempty
+
+\lstset{basicstyle=\scriptsize, frame=single}
+
+\newenvironment{changemargin}[1]{% 
+  \begin{list}{}{% 
+    \setlength{\topsep}{0pt}% 
+    \setlength{\leftmargin}{#1}% 
+    \setlength{\rightmargin}{1em}
+    \setlength{\listparindent}{\parindent}% 
+    \setlength{\itemindent}{\parindent}% 
+    \setlength{\parsep}{\parskip}% 
+  }% 
+  \item[]}{\end{list}} 
+
+\title{Lecture 08---Race Conditions; More Synchronization}
+\date{January 21, 2015}
+
+\begin{document}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Roadmap}
+
+  \Large
+    \begin{changemargin}{2cm}
+      Last Time: Race Conditions, Locking (mutexes)\\[1em]
+      Now: More Synchronization Mechanisms
+    \end{changemargin}
+  
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\part{More Synchronization}
+\frame{\partpage}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Mutexes Recap}
+
+  \begin{changemargin}{2.5cm}
+     Our focus is on \structure{how to use mutexes correctly}:
+  \begin{itemize}
+    \item Call {\tt lock} on mutex {\tt m1}. Upon return from
+      {\tt lock}, you have exclusive access to {\tt m1} until you
+      {\tt unlock} it.
+    \item Other calls to {\tt lock} {\tt m1} will not return
+      until {\tt m1} is available.
+    \end{itemize}
+    For background on selection algorithms, look at
+      \href{http://en.wikipedia.org/wiki/Lamport\%27s_bakery_algorithm}
+      {Lamport's bakery algorithm}. \\ (Not in scope for this
+      course.)
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{More on Mutexes}
+
+  \begin{changemargin}{2.5cm}
+     Can also ``try-lock'': grab lock if available, else return
+     to caller (and do something else).\\[1em]
+
+     Excessive use of locks can serialize programs. 
+\begin{itemize}
+\item Linux kernel used to
+rely on a Big Kernel Lock protecting lots of resources in the 2.0 era.
+\item Linux 2.2 improved performance on SMPs by cutting down on the use
+of the BKL.
+\end{itemize}~\\[1em]
+
+Note: in Windows, ``mutex'' is an inter-process
+communication mechanism. Windows ``critical sections'' are our mutexes.
+
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Spinlocks}
+
+  \begin{changemargin}{2.5cm}
+    Functionally equivalent to {\tt mutex}.
+
+  \begin{itemize}
+    \item  {\tt pthread\_spinlock\_t},
+      {\tt pthread\_spin\_lock}, {\tt pthread\_spin\_trylock} and friends
+  \end{itemize}
+ 
+    \vfill
+    Implementation difference: spinlocks will repeatedly try the lock and will not put
+      the thread to sleep.
+    \vfill
+    Good if your protected code is short.
+    \vfill
+    Mutexes may be implemented as a combination between spinning and sleeping
+      (spin for a short time, then sleep).
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Read-Write Locks}
+
+  \begin{changemargin}{2.5cm}
+  Two observations:
+  \begin{itemize}
+    \item If there are only reads, there's no datarace.
+    \item Often, writes are relatively rare.
+  \end{itemize}
+  With mutexes/spinlocks, you have to lock the data, even for a read,
+      since a write could happen.\\[1em]
+
+  But, most of the time, reads can happen in parallel, as long as
+      there's no write.\\[1em]
+
+  Solution: Multiple threads can hold a read lock\\ \hspace*{2em} ({\tt pthread\_rwlock\_rdlock})\\
+      but only one thread may hold the associated write lock\\ \hspace*{2em} ({\tt pthread\_rwlock\_wrlock});\\
+      grabbing the write waits until  current readers are done.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Semaphores}
+
+  \begin{changemargin}{2cm}
+    Semaphores have a {\tt value}.
+      You specify initial {\tt value}.\\[1em]
+    Semaphores allow sharing of a \# of instances of a resource.\\[1em]
+    Two fundamental operations: {\tt wait} and {\tt post}.\\[1em]
+  \begin{itemize}
+    \item {\tt wait} is like {\tt lock}; reserves the resource and decrements the value.
+      \begin{itemize}
+        \item If value is 0, sleep until value is greater than 0.
+      \end{itemize}
+    \item {\tt post} is like {\tt unlock}; releases the resource and increments the value.
+  \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Barriers}
+
+  \begin{changemargin}{2.5cm}
+    Allows you to ensure that (some subset of) a collection 
+    of threads all reach the barrier before finishing.\\[1em]
+
+    Pthreads: A barrier is a {\tt pthread\_barrier\_t}.\\[1em]
+
+    Functions: {\tt \_init()} (parameter: how many threads the barrier
+    should wait for) and {\tt \_destroy()}.\\[1em]
+
+    Also {\tt \_wait()}: similar to {\tt pthread\_join()}, but waits
+      for the specified number of threads to arrive at the barrier
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Lock-Free Algorithms}
+
+  \begin{changemargin}{2.5cm}
+    We'll talk more about this in a few weeks.\\[1em]
+
+    Modern CPUs support atomic operations, such as compare-and-swap, which
+enable experts to write lock-free code.\\[1em]
+
+    Lock-free implementations are extremely complicated and must still contain certain synchronization constructs.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Semaphores Usage}
+  
+  \begin{changemargin}{1cm}
+  \begin{lstlisting}
+#include <semaphore.h>
+
+int sem_init(sem_t *sem, int pshared, unsigned int value);
+int sem_destroy(sem_t *sem);
+int sem_post(sem_t *sem);
+int sem_wait(sem_t *sem);
+int sem_trywait(sem_t *sem);
+  \end{lstlisting}
+
+  \begin{itemize}
+    \item Also must link with {\tt -pthread} (or {\tt -lrt} on Solaris).
+    \item All functions return {\tt 0} on success.
+    \item Same usage as mutexes in terms of passing pointers.
+  \end{itemize}~\\[1em]
+    How could you use as {\tt semaphore} as a {\tt mutex}?
+    \begin{itemize}
+    \item<2-> If the initial {\tt value} is 1 and you use {\tt wait} to lock
+      and {\tt post} to unlock, it's equivalent to a {\tt mutex}.
+    \end{itemize}
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Semaphores for Signalling}
+
+  \begin{changemargin}{1cm}
+  Here's an example from the book. How would you make this always print
+  ``Thread 1'' then ``Thread 2'' using semaphores?
+
+  \begin{lstlisting}
+#include <pthread.h>
+#include <stdio.h>
+#include <semaphore.h>
+#include <stdlib.h>
+
+void* p1 (void* arg) { printf("Thread 1\n"); }
+
+void* p2 (void* arg) { printf("Thread 2\n"); }
+
+int main(int argc, char *argv[])
+{
+    pthread_t thread[2];
+    pthread_create(&thread[0], NULL, p1, NULL);
+    pthread_create(&thread[1], NULL, p2, NULL);
+    pthread_join(thread[0], NULL);
+    pthread_join(thread[1], NULL);
+    return EXIT_SUCCESS;
+}
+  \end{lstlisting}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Semaphores for Signalling}
+
+  \begin{changemargin}{1cm}
+  Here's their solution. Is it actually correct?
+
+  \begin{lstlisting}
+sem_t sem;
+void* p1 (void* arg) {
+  printf("Thread 1\n");
+  sem_post(&sem);
+}
+void* p2 (void* arg) {
+  sem_wait(&sem);
+  printf("Thread 2\n");
+}
+
+int main(int argc, char *argv[])
+{
+    pthread_t thread[2];
+    sem_init(&sem, 0, /* value: */ 1);
+    pthread_create(&thread[0], NULL, p1, NULL);
+    pthread_create(&thread[1], NULL, p2, NULL);
+    pthread_join(thread[0], NULL);
+    pthread_join(thread[1], NULL);
+    sem_destroy(&sem);
+}
+  \end{lstlisting}
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Semaphores for Signalling}
+
+  
+  \begin{changemargin}{1cm}
+  \begin{enumerate}
+    \item {\tt value} is initially 1.
+    \vfill
+    \item Say {\tt p2} hits its {\tt sem\_wait} first and succeeds.
+    \vfill
+    \item {\tt value} is now 0 and {\tt p2} prints ``Thread 2'' first.
+  \end{enumerate}
+  \begin{itemize}
+    \item If {\tt p1} happens first, it would just increase
+      {\tt value} to 2.\vfill
+    \item<2-> Fix: set the initial {\tt value} to \alert{0}.\\[1em]
+Then, if {\tt p2} hits its {\tt sem\_wait} first, it will
+      not print until {\tt p1} posts (and prints ``Thread 1'') first.
+  \end{itemize}~\\[1em]
+
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{frame}
+  \frametitle{C++ atomics}
+
+  Coming soon.
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\part{Making C Compilers Work For You}
+\frame{\partpage}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Three Address Code}
+
+  \begin{changemargin}{2.5cm}
+  \begin{itemize}
+    \item An intermediate code used by compilers
+      for analysis and optimization.
+    \vfill
+    \item Statements represent one fundamental operation---we
+      can consider each operation \structure{atomic}.
+    \vfill
+    \item Statements have the form:\\
+      $\qquad result := operand_1\:operator\:operand_2$
+    \vfill
+    \item Useful for reasoning about data races,\\ and easier to read than assembly. \\
+            \hspace*{1cm} (separates out memory reads/writes).
+  \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{GIMPLE}
+
+  \begin{changemargin}{2.5cm}
+  \begin{itemize}
+    \item GIMPLE is the three address code used by {\tt gcc}.
+    \vfill
+    \item To see the GIMPLE representation of your code use the
+      {\tt -fdump-tree-gimple} flag.
+    \vfill
+    \item To see all of the three address code generated by the compiler use
+      {\tt -fdump-tree-all}. You'll probably just be interested in the
+      optimized version.
+    \vfill
+    \item Use GIMPLE to reason about your code at a low level without
+      having to read assembly.
+  \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Live Coding Demo: GIMPLE}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{{\tt volatile} Keyword}
+
+\begin{changemargin}{1.5cm}
+  \begin{itemize}
+    \item Used to notify the compiler that the variable may be changed by ``external forces''. For instance,
+    %% \item Prevents the compiler from substituting values instead of evaluating
+    %%   the value (with proper locking you'll never need this, why?)
+  \end{itemize}
+
+  \begin{lstlisting}
+int i = 0;
+
+while (i != 255) {
+  ...
+  \end{lstlisting}
+
+{\tt volatile} prevents this from being optimized to:
+
+  \begin{lstlisting}
+int i = 0;
+
+while (true) {
+  ...
+  \end{lstlisting}
+
+  \begin{itemize}
+    \item Variable will not actually be {\tt volatile} in the critical section
+      and only prevents useful optimizations.
+    \item Usually wrong unless there is a {\bf very} good reason for it.
+  \end{itemize}
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Branch Prediction Hints}
+
+  \begin{changemargin}{1.5cm}
+  As seen earlier in class, {\tt gcc} allows you to give branch
+  prediction hints by calling this builtin function:
+
+  \begin{center}
+    \verb+long __builtin_expect (long exp, long c)+
+  \end{center}
+
+  The expected result is that {\tt exp} equals {\tt c}.\\[1em]
+  Compiler reorders code \& tells CPU the prediction.
+  
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{The {\tt restrict} Keyword}
+
+   \begin{changemargin}{2.5cm}
+   A new feature of C99: ``The restrict type qualifier allows programs to
+      be written so that translators can produce significantly faster
+      executables.''
+  \begin{itemize}
+    \item To request C99 in {\tt gcc}, use the {\tt -std=c99} flag.
+  \end{itemize}
+~\\
+   {\tt restrict} means: you are promising the
+      compiler that the pointer will never \structure{alias} (another pointer
+      will not point to the same data) for the lifetime of the pointer.
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Example of {\tt restrict} (1)}
+
+  \begin{changemargin}{2.5cm}
+    Pointers declared with {\tt restrict} must
+       never point to the same data.
+~\\[1em]
+    From Wikipedia:
+
+  \begin{lstlisting}
+void updatePtrs(int* ptrA, int* ptrB, int* val) {
+    *ptrA += *val;
+    *ptrB += *val;
+}
+  \end{lstlisting}
+ Would declaring all these pointers as
+      {\tt restrict} generate better code?
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Example of {\tt restrict} (2)}
+
+  \begin{changemargin}{2.5cm}
+    Let's look at the GIMPLE:
+
+  \begin{lstlisting}[numbers=left]
+void updatePtrs(int* ptrA, int* ptrB, int* val) {
+ D.1609 = *ptrA;
+ D.1610 = *val;
+ D.1611 = D.1609 + D.1610;
+ *ptrA = D.1611;
+ D.1612 = *ptrB;
+ D.1610 = *val;
+ D.1613 = D.1612 + D.1610;
+ *ptrB = D.1613;
+}
+  \end{lstlisting}
+
+  \begin{itemize}
+    \item Could any operation be left out if all the pointers
+      didn't overlap?
+  \end{itemize}  
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Example of {\tt restrict} (3)}
+
+  \begin{changemargin}{2.5cm}
+  \begin{lstlisting}[numbers=left]
+void updatePtrs(int* ptrA, int* ptrB, int* val) {
+ D.1609 = *ptrA;
+ D.1610 = *val;
+ D.1611 = D.1609 + D.1610;
+ *ptrA = D.1611;
+ D.1612 = *ptrB;
+ D.1610 = *val;
+ D.1613 = D.1612 + D.1610;
+ *ptrB = D.1613;
+}
+  \end{lstlisting}
+  \begin{itemize}
+    \item If {\tt ptrA} and {\tt val} are not equal, you don't have to
+      reload the data on {\bf line 7}.
+    \item Otherwise, you would: there might be a call\\{\tt ~~~~updatePtrs(\&x, \&y,
+      \&x);}
+  \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Example of {\tt restrict} (4)}
+  \begin{changemargin}{2.5cm}
+  Hence, this markup allows optimization:
+  \begin{lstlisting}
+void updatePtrs(int* restrict ptrA, 
+                int* restrict ptrB,
+                int* restrict val)
+  \end{lstlisting}
+  Note: you can get the optimization by just declaring {\tt ptrA} and
+      {\tt val} as {\tt restrict}; {\tt ptrB} isn't needed for this optimization
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Summary of {\tt restrict}}
+
+  \begin{changemargin}{2.5cm}
+  \begin{itemize}
+    \item Use {\tt restrict} whenever you know the pointer will not alias
+      another pointer (also declared {\tt restrict})
+  \end{itemize}
+
+    It's hard for the compiler to infer pointer aliasing information;
+    it's easier for you to specify it.\\[1em]
+
+    $\Rightarrow$ compiler can better optimize your code (more perf!)\\[1em]
+
+    Caveat: don't lie to the compiler, or  you will get
+      \alert{undefined behaviour}.\\[1em]
+
+    Aside: {\tt restrict} is not the same as {\tt const}. {\tt const} data can still be
+      changed through an alias.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Next topic: Dependencies}
+
+  \Large
+  \begin{changemargin}{2.5cm}
+     \structure{Dependencies} are the main
+      limitation to parallelization.\\[1em]
+     Example: computation must be evaulated as {\tt XY} and not {\tt YX}.\\[1em]
+  \end{changemargin}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Not synchronization}
+
+  \Large
+  \begin{changemargin}{2.5cm}
+      Assume (for now) no synchronization problems.\\[1em]
+      Only trying to identify code that is safe to run in
+      parallel.
+
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\part{Memory-carried Dependencies}
+\frametitle{\partpage}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Memory-carried Dependencies}
+\begin{changemargin}{2.5cm}
+\item Dependencies limit the amount of parallelization.
+\vfill
+Can we execute these 2 lines in parallel?
+\begin{lstlisting}
+x = 42
+x = x + 1  
+\end{lstlisting}
+\pause
+\alert{No.}\\[1em]
+\begin{itemize}
+\item Assume x initially 1. What are possible outcomes?
+\pause \newline \structure{~~~x = 43 or x = 42}\\[1em]
+
+\end{itemize}
+
+Next, we'll classify dependencies.
+
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Read After Read (RAR)}
+\begin{changemargin}{2.5cm}
+Can we execute these 2 lines in parallel? (initially x is 2)
+\begin{lstlisting}
+y = x + 1
+z = x + 5
+\end{lstlisting}
+\pause
+\structure{Yes.}\\[1em]
+\begin{itemize}
+\item Variables y and z are independent.
+\item Variable x is only read.
+\end{itemize}
+
+RAR dependency allows parallelization.
+
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Read After Write (RAW)}
+
+\begin{changemargin}{2.5cm}
+What about these 2 lines? (again, initially x is 2):
+\begin{lstlisting}
+x = 37
+z = x + 5
+\end{lstlisting}
+\pause
+\alert{No, z = 42 or z = 7.}\\[1em]
+
+RAW inhibits parallelization: can't change ordering.\\
+Also known as a \structure{true dependency}.
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Write After Read (WAR)}
+\begin{changemargin}{2.5cm}
+What if we change the order now? (again, initially x is 2)
+\begin{lstlisting}
+z = x + 5
+x = 37
+\end{lstlisting}
+\pause
+\alert{No. Again, z = 42 or z = 7.}\\[1em]
+\begin{itemize}
+\item WAR is also known as a \structure{anti-dependency}.
+\item But, we can modify this code to enable parallelization.
+\end{itemize}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Removing Write After Read (WAR) Dependencies}
+\begin{changemargin}{1.8cm}
+Make a copy of the variable:
+\begin{lstlisting}
+x_copy = x
+z = x_copy + 5
+x = 37
+\end{lstlisting}
+\pause
+\structure{We can now run the last 2 lines in parallel.}
+\begin{itemize}
+\item Induced a true dependency (RAW) between first 2 lines.
+\item Isn't that bad?
+\end{itemize}
+\pause
+Not always:
+\begin{lstlisting}
+z = very_long_function(x) + 5
+x = very_long_calculation()
+\end{lstlisting}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Write After Write (WAW)}
+\begin{changemargin}{2.5cm}
+Can we run these lines in parallel? (initially x is 2)
+\begin{lstlisting}
+z = x + 5
+z = x + 40
+\end{lstlisting}
+\pause
+\alert{Nope, z = 42 or z = 7}.\\[1em]
+\begin{itemize}
+\item WAW is also known as an \structure{output dependency}.
+\item We can remove this dependency (like WAR):
+\end{itemize}
+\pause
+\begin{lstlisting}
+z_copy = x + 5
+z = x + 40
+\end{lstlisting}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+\frametitle{Summary of Memory-carried Dependencies}
+\begin{center}
+\begin{tabular}{ll|p{2.8cm}p{3.2cm}}
+& & \multicolumn{2}{c}{Second Access} \\ 
+&  & \bf Read & \bf Write \\ \hline
+\multirow{2}{*}{First Access} & \bf Read & No Dependency Read After Read (RAR)  & Anti-dependency Write After Read (WAR) \\[0.5em]
+& \bf Write & True Dependency Read After Write (RAW) & Output Dependency Write After Write (WAW) \\
+\end{tabular}
+\end{center}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\end{document}
