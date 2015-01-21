@@ -1,3 +1,16 @@
+/* ECE 459 Tutorial 2
+ * A simple HTTP Server implementation to 
+ * demostrate the usage/performance of asynchronous multiplexing.
+ *
+ * A simply working version that does NOT care about request headers
+ * Send "Hello World" back WHENEVER a request is received
+ * Does NOT support HTTP 1.1 pipelining
+ * Use with httperf for benchmarking purposes
+ *
+ * Copyright 2015, David Xi Cheng <david.cheng at uwaterloo.ca>
+ * All rights reserved.
+ */
+
 #include <iostream>
 #include <string>
 #include <memory>
@@ -19,6 +32,11 @@ static std::unique_ptr<HTTPServerPoll> server;
 #ifdef EPOLL
 #include "http_server_epoll.h"
 static std::unique_ptr<HTTPServerEpoll> server;
+#else
+#ifdef MT
+#include "http_server_multithread.h"
+static std::unique_ptr<HTTPServerMultithread> server;
+#endif  //MT
 #endif	//EPOLL
 #endif  //POLL
 #endif  //SELECT
@@ -56,6 +74,10 @@ int main( int argc, char* argv[] ){
 #else
 #ifdef EPOLL
 	server.reset( new HTTPServerEpoll(port) );
+#else
+#ifdef MT
+	server.reset( new HTTPServerMultithread(port) );
+#endif  //MT
 #endif  //EPOLL
 #endif  //POLL
 #endif  //SELECT

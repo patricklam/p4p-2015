@@ -1,3 +1,16 @@
+/* ECE 459 Tutorial 2
+ * A simple HTTP Server implementation to 
+ * demostrate the usage/performance of asynchronous multiplexing.
+ *
+ * A simply working version that does NOT care about request headers
+ * Send "Hello World" back WHENEVER a request is received
+ * Does NOT support HTTP 1.1 pipelining
+ * Use with httperf for benchmarking purposes
+ *
+ * Copyright 2015, David Xi Cheng <david.cheng at uwaterloo.ca>
+ * All rights reserved.
+ */
+
 #include "http_server_poll.h"
 
 void HTTPServerPoll::start_serving(){
@@ -18,7 +31,7 @@ void HTTPServerPoll::start_serving(){
 		int ret = poll( &sock_fds[0], sock_fds.size(), -1 );
 
 		if( ret == -1 ){
-			std::cerr << "error polling" << std::endl;
+			perror( "poll" );
 			return;
 		}
 	

@@ -26,7 +26,7 @@ void HTTPServerEpoll::start_serving(){
 
 	//adding server_sock to the epoll queue
 	struct epoll_event ev, events[EPOLL_QUEUE_LEN];
-	ev.events = EPOLLIN;
+	ev.events = EPOLLIN | EPOLLET;
 	ev.data.fd = server_sock;
 	if( epoll_ctl(epfd, EPOLL_CTL_ADD, server_sock, &ev) < 0 ){
 		perror( "epoll_ctl" );
@@ -46,24 +46,28 @@ void HTTPServerEpoll::start_serving(){
 		for( int i = 0; i < num_fds; ++i ) {
 			if( events[i].data.fd == server_sock ){
 				//server_sock is ready to accept
-				client_sock = accept_client_nonblock();
+				std::vector<int> client_socks;
+
+				client_sock = accept_all_nonblock(client_socks);
 				if( client_sock < 0 )	return;
 				if( client_sock == 0 ) 	continue;
 				else{
-					//add client_sock to sock_fds
-					ev.events = EPOLLIN;
-					ev.data.fd = client_sock;
-					if( epoll_ctl(epfd, EPOLL_CTL_ADD, client_sock, &ev) < 0 ){
-						perror( "epoll_ctl" );
-						return;
-					}	
+					for( int client_sock : client_socks ){
+						//add client_sock to sock_fds
+						ev.events = EPOLLIN | EPOLLET;
+						ev.data.fd = client_sock;
+						if( epoll_ctl(epfd, EPOLL_CTL_ADD, client_sock, &ev) < 0 ){
+							perror( "epoll_ctl" );
+							return;
+						}	
+					}
 				}		
 			}
 
 			else{ //client_sock is ready to read
 				//either error or remote close
 				//remove from epoll queue
-				if( process_client( events[i].data.fd ) < 0 ){
+				if( process_all( events[i].data.fd ) < 0 ){
 					//This doesn't work in kernel version < 2.6.9
 					epoll_ctl( epfd, EPOLL_CTL_DEL, events[i].data.fd, NULL );
 					close( events[i].data.fd );

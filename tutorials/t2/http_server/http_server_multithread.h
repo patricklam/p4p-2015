@@ -11,29 +11,19 @@
  * All rights reserved.
  */
 
-#include "http_server_sync.h"
+#ifndef __HTTP_SERVER_MULTITHREAD_H__
+#define __HTTP_SERVER_MULTITHREAD_H__
 
-void HTTPServerSync::start_serving(){
-	if( create_bind_listen() < 0 ){
-		return;
-	}
+#include <thread>
+#include "http_server_base.h"
 
-	int client_sock;
+class HTTPServerMultithread : public HTTPServerBase {
+ public:
+	void start_serving();
+	void client_handler( int );
 
-	while( true ){
-		//accept a client
-		client_sock = accept_client();
-		
-		if( client_sock < 0 ){
-			return;
-		}
+	HTTPServerMultithread( int port ) : 
+		HTTPServerBase( port ) { }
+};
 
-		while( true ){
-			//either error/remote close
-			if( process_client(client_sock) < 0 ){
-				close( client_sock );
-				break;
-			}
-		}
-	}
-}
+#endif

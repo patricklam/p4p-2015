@@ -11,9 +11,19 @@
  * All rights reserved.
  */
 
-#include "http_server_sync.h"
+#include "http_server_multithread.h"
 
-void HTTPServerSync::start_serving(){
+void HTTPServerMultithread::client_handler( int client_sock ){
+	while( true ){
+		//either error/remote close
+		if( process_client(client_sock) < 0 ){
+			close( client_sock );
+			break;
+		}
+	}
+}
+
+void HTTPServerMultithread::start_serving(){
 	if( create_bind_listen() < 0 ){
 		return;
 	}
@@ -28,12 +38,8 @@ void HTTPServerSync::start_serving(){
 			return;
 		}
 
-		while( true ){
-			//either error/remote close
-			if( process_client(client_sock) < 0 ){
-				close( client_sock );
-				break;
-			}
-		}
+		//create a thread to handle the client
+		std::thread t( &HTTPServerMultithread::client_handler, this, client_sock );
+		t.detach();
 	}
 }
