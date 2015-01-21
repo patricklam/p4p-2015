@@ -25,7 +25,7 @@
   }% 
   \item[]}{\end{list}} 
 
-\title{Tutorial 02---Implement Scalable Servers with Non-blocking / Asynchronous I/O}
+\title{Tutorial 02---Implement Scalable Servers with Non-blocking I/O}
 \subtitle{ECE 459: Programming for Performance}
 \author{David Xi Cheng \\ \href{mailto:david.cheng@uwaterloo.ca}{david.cheng@uwaterloo.ca}}
 \institute{University of Waterloo}
@@ -93,7 +93,7 @@
       //create
       int server_sock = socket(AF_INET, SOCK_STREAM, 0);
       if( server_sock < 0 ){
-          return -1;
+          /* something is wrong here */
       }
       ...
   \end{lstlisting}
@@ -106,18 +106,13 @@
 
   \begin{lstlisting}[language=C++,basicstyle=\ttfamily\footnotesize,commentstyle=\color{commgreen},keywordstyle=\color{blue},breaklines=true]
 	    //bind
-	    int ret = bind( server_sock, (struct sockaddr *) &server_addr, sizeof(server_addr) );
-
-	    if( ret < 0 ){
-	        close( server_sock );
-	        return -1;
+	    if( bind(server_sock, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0 ){
+	        /* something is wrong here */
 	    }
-
+	    
 	    //listen
-	    ret = listen( server_sock, 5 );
-	    if( ret < 0 ){
-	        close( server_sock );
-	        return -1;
+	    if( listen(server_sock, BACK_LOG_SIZE) < 0 ){
+	        /* something is wrong here */            
 	    }
 	    
 	    return server_sock;
@@ -162,7 +157,7 @@
 int main(){
     int server_sock;
     if( (server_sock = create_bind_listen(PORT_NUMBER)) < 0 ){
-        exit( EXIT_FAILURE );
+        /* something is wrong here */
     }
     
     struct sockaddr_in client_addr;
@@ -171,7 +166,9 @@ int main(){
     
     while( true ){
         client_fd = accept( server_sock, (struct socked *) &client_addr, &client_addr_len );
-        if( client_fd < 0 ) {    exit( EXIT_FAILURE );    }
+        if( client_fd < 0 ) {
+            /* something is wrong here */
+        }
         
         //communications happen here
         
@@ -222,10 +219,14 @@ What are the options
 \vspace{0.5em}
 \item Serve many clients with each server thread
 \begin{itemize}
-\item non-blocking Multiplexing\\
-{\footnotesize \tt select, poll, epoll(Linux), kqueue(BSD)} \\[0.5em]
+\item non-blocking multiplexing \\
+{\footnotesize \tt select, poll, epoll(Linux), kqueue(BSD)} \\
+{\footnotesize We are going to talk about it in this tutorial}\\[0.5em]
+
 \item asynchronous I/O\\
-{\footnotesize \tt callback upon completion}
+{\footnotesize \tt callback upon completion (Linux AIO) }\\
+{\footnotesize Check it out:\\ \href{http://www.ibm.com/developerworks/linux/library/l-async/}{Boost application performance using asynchronous I/O}}
+{\scriptsize }
 \end{itemize}
 \end{itemize}
 \end{minipage}
@@ -239,7 +240,7 @@ What are the options
   \item handles concurrent connections
   \item performance degradation after too many threads/processes\\
   {\scriptsize (due to memory and context-switch overhead)}\\
-  {\tiny (although, people would argue to do better with user-level scheduling)}
+  {\scriptsize (although, people would argue to do better with user-level threading)}
   \end{itemize}
   
   \begin{center}
@@ -255,7 +256,7 @@ What are the options
 int main(){
     int server_sock;
     if( (server_sock = create_bind_listen(PORT_NUMBER)) < 0 ){
-        exit( EXIT_FAILURE );
+        /* something is wrong here */
     }
     
     struct sockaddr_in client_addr;
@@ -264,7 +265,9 @@ int main(){
     
     while( true ){
         client_fd = accept( server_sock, (struct socked *) &client_addr, &client_addr_len );
-        if( client_fd < 0 ) {    exit( EXIT_FAILURE );    }
+        if( client_fd < 0 ) {
+            /* something is wrong here */
+        }
         
         //create a separate thread/process to
         //communicate with the client
@@ -282,12 +285,13 @@ int main(){
   \begin{itemize}
   \item Multiplexed with notification facilities, i.e., select, poll and epoll.
   \end{itemize}
+  \vspace{0.5em}
   Generalized Event Loop
   \begin{enumerate}
   \item create/modify set(s) of file descriptors that require readiness notifications.
-  \item wait on select/poll/epoll until one or more fds become ready.
-  \item select/poll/epoll returns with hints of which fds are ready to read/write or have exceptions.
-  \item handle those fds appropriately.
+  \item wait on select/poll/epoll until one or more FDs become ready.
+  \item select/poll/epoll returns with hints of which FDs are ready to read/write or have exceptions.
+  \item handle those FDs appropriately.
   \item repeat from step 1.
   \end{enumerate}
   \vspace{1em}
@@ -395,7 +399,7 @@ int main() {
         read_fds = sock_fds;
         
         if( select(fd_max+1, &read_fds, NULL, NULL, NULL) == -1 ){
-            /* handles select error here */
+            /* something is wrong here */
         }
         
         //read_fds is now overridden with hints of fd readiness.
@@ -403,7 +407,8 @@ int main() {
             if( FD_ISSET(i, &read_fds) ){
                 //fd i is now ready
                 if( i == server_sock ){ //server_sock is ready to accept
-                    /* accept a client here */
+                    
+                    /* accept client(s) here */
                     
                     //add client_sock to fd_set
                     FD_SET( client_sock, &sock_fds );
@@ -412,7 +417,8 @@ int main() {
                 }
                 
                 else{ //client_sock is ready to read
-                    /* communicate with the client */
+                   
+                    /* communicate with the client here */
                 
                     if( /* done with the client */ ) {
                         FD_CLR( i, &sock_fds ); 
@@ -514,6 +520,7 @@ int main(){
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}[fragile]
   \frametitle{select, poll v.s. epoll}
+  
      Both select and poll need to scan the entire fd set per call.\\
      Time Complexity: linear to the number of connections.\\
      \begin{center}
@@ -534,7 +541,7 @@ int main(){
   \frametitle{select, poll v.s. epoll}
   \begin{center}
   \includegraphics[scale=0.5]{select_poll_epoll_perf.png}\\
-  {\footnotesize $\mu$server performance comparison with different notification facilities.\footnote{\tiny Figure 5, Comparing and Evaluating epoll, select, and poll Event Mechanisms, Linux Symposium Vol.01, 2004}}
+  {\tiny $\mu$server performance comparison using different notification facilities, with 10k idle connections.\footnote{\tiny Figure 5, Comparing and Evaluating epoll, select, and poll Event Mechanisms, Linux Symposium Vol.01, 2004}}
   \end{center}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -572,6 +579,7 @@ struct epoll_event {
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}[fragile]
   \frametitle{Epoll}
+  
     \begin{lstlisting}[language=C++,basicstyle=\ttfamily\footnotesize,commentstyle=\color{commgreen},keywordstyle=\color{blue},breaklines=true]
 int epoll_wait( int epfd, struct poll_event *events, int maxevents, int timeout );
 \end{lstlisting}
@@ -579,7 +587,7 @@ int epoll_wait( int epfd, struct poll_event *events, int maxevents, int timeout 
 \begin{itemize}
 \item {\tt epfd} is the epoll file descriptor that you want to use.
 \item active FDs will be copied to the {\tt events} array upon return.
-\item {\tt maxevents} is the max num of active events per call.
+\item {\tt maxevents} is the max num of active events copied per call.
 \item blocks until one or more FDs are ready.
 \end{itemize}
 \end{frame}
@@ -656,8 +664,9 @@ int main(){
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}[fragile]
   \frametitle{Edge v.s. Level-Triggered}
+    \hspace*{2em} \begin{minipage}{.8\textwidth}
    We mentioned that epoll tracks state changes of FDs,\\
-   epoll could work under two modes,\\
+   epoll could work under two modes,
    \begin{itemize}
    \item Edge-Triggered {\scriptsize notify only when an FD changes from not ready to ready}\\
    {\footnotesize e.g., won't notify again if you don't empty the buffer first }
@@ -675,7 +684,7 @@ int main(){
     }
    \end{lstlisting}
    
-   
+   \end{minipage}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
