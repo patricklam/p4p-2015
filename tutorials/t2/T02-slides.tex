@@ -587,7 +587,7 @@ int epoll_wait( int epfd, struct poll_event *events, int maxevents, int timeout 
 \begin{itemize}
 \item {\tt epfd} is the epoll file descriptor that you want to use.
 \item active FDs will be copied to the {\tt events} array upon return.
-\item {\tt maxevents} is the max num of active events copied per call.
+\item {\tt maxevents} is the max num of active events to copy per call.
 \item blocks until one or more FDs are ready.
 \end{itemize}
 \end{frame}
