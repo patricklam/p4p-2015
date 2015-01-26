@@ -1,0 +1,604 @@
+\documentclass[aspectratio=43]{beamer}
+
+% Text packages to stop warnings
+\usepackage{lmodern}
+\usepackage{textcomp}
+\usepackage{listings}
+\usepackage{multirow}
+
+% Themes
+\usetheme{Boadilla}
+\setbeamertemplate{footline}[page number]{}
+\setbeamertemplate{navigation symbols}{}
+
+% Suppress the navigation bar
+\beamertemplatenavigationsymbolsempty
+
+\lstset{basicstyle=\scriptsize, frame=single}
+
+\newenvironment{changemargin}[1]{% 
+  \begin{list}{}{% 
+    \setlength{\topsep}{0pt}% 
+    \setlength{\leftmargin}{#1}% 
+    \setlength{\rightmargin}{1em}
+    \setlength{\listparindent}{\parindent}% 
+    \setlength{\itemindent}{\parindent}% 
+    \setlength{\parsep}{\parskip}% 
+  }% 
+  \item[]}{\end{list}} 
+
+\title{Lecture 10---C++ atomics; Compilers and You}
+\date{January 26, 2015}
+
+\begin{document}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Roadmap}
+
+  \Large
+    \begin{changemargin}{2cm}
+      Last Time: Synchronization Mechanisms\\
+      This Time: C++ atomics; C Compilers; Dependencies
+    \end{changemargin}
+  
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\part{C++ atomics}
+\frame{\partpage}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{About C++ atomics}
+  \begin{changemargin}{2cm}
+    You can use the default {\tt std::memory\_order}.\\
+    (= sequential consistency)\\[1em]
+
+    \alert{Don't use relaxed atomics unless you're an expert!}\\[1em]
+  \end{changemargin}
+  \begin{changemargin}{1cm}
+    \scriptsize     \url{http://stackoverflow.com/questions/9553591/c-stdatomic-what-is-stdmemory-order-and-how-to-use-them}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Really, don't use C++ relaxed atomics!}
+  \begin{center}
+    \includegraphics[width=.8\textwidth]{L10/look_of_disapproval}
+  \end{center}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{C++ atomics: Key Idea}
+  \begin{changemargin}{2cm}
+    An \emph{atomic operation} is indivisible.\\[1em]
+    Other threads see state before or after the operation,
+    nothing in between.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Simplest: {\tt atomic\_flag}}
+  \begin{changemargin}{2cm}
+    Represents a boolean flag.\\[1em]
+    \begin{lstlisting}
+#include <atomic>
+
+atomic_flag f = ATOMIC_FLAG_INIT;
+    \end{lstlisting}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Operations on {\tt atomic\_flag}}
+  \begin{changemargin}{2cm}
+    Can clear, and can test-and-set:
+    \begin{lstlisting}
+#include <atomic>
+
+atomic_flag f = ATOMIC_FLAG_INIT;
+int foo() {
+  f.clear();
+  if (f.test_and_set()) {
+    // was true
+  }
+}
+    \end{lstlisting}
+    ~\\
+    \begin{tabbing}
+      {\tt test\_and\_set}: \= atomically sets to true, \\
+      \> returns previous value.
+    \end{tabbing}
+    No assignment (=) operator.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Using more general C++ atomics}
+
+  \begin{changemargin}{1cm}
+    Declaring them:
+  \end{changemargin}
+\begin{lstlisting}
+#include <atomic>
+
+atomic<int> x;
+\end{lstlisting}
+  \begin{changemargin}{1cm}
+Libary's implementation: \\
+\hspace*{1em} on small types, lock-free operations;\\
+\hspace*{1em} on large types, mutexes.
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{What to do with Atomics}
+
+  \begin{changemargin}{2cm}
+    \Large
+    Kinds of operations:
+    \begin{itemize}
+    \item reads
+    \item writes
+    \item read-modify-write (RMW)
+    \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Reads and Writes}
+
+  \begin{changemargin}{2cm}
+    C++ has syntax to make these all transparent:
+\begin{lstlisting}[language=C++]
+#include <atomic>
+#include <iostream>
+
+std::atomic<int> ai;
+int i;
+
+int main() {
+    ai = 4;
+    i = ai;
+    ai = i;
+    std::cout << i;
+}
+\end{lstlisting}
+Can also use {\tt i = ai.load()} and {\tt ai.store(i)}.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Read-Modify-Write (RMW)}
+
+  \begin{changemargin}{2cm}
+    Consider {\tt ai++}.\\[1em]
+    This is really \\
+    ~~~{\tt tmp = ai.read(); tmp++; ai.write(tmp); }\\[1em]
+    Hardware can do that atomically.\\[1em]
+    Other RMWs: {\tt +-, \&=, etc, compare-and-swap}\\[2em]
+
+    {\small
+      more info:\\ \url{http://preshing.com/20130618/atomic-vs-non-atomic-operations/}
+      }
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\part{Making C Compilers Work For You}
+\frame{\partpage}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Three Address Code}
+
+  \begin{changemargin}{2.5cm}
+  \begin{itemize}
+    \item An intermediate code used by compilers
+      for analysis and optimization.
+    \vfill
+    \item Statements represent one fundamental operation---we
+      can consider each operation \structure{atomic}.
+    \vfill
+    \item Statements have the form:\\
+      $\qquad result := operand_1\:operator\:operand_2$
+    \vfill
+    \item Useful for reasoning about data races,\\ and easier to read than assembly. \\
+            \hspace*{1cm} (separates out memory reads/writes).
+  \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{GIMPLE}
+
+  \begin{changemargin}{2.5cm}
+  \begin{itemize}
+    \item GIMPLE is the three address code used by {\tt gcc}.
+    \vfill
+    \item To see the GIMPLE representation of your code use the
+      {\tt -fdump-tree-gimple} flag.
+    \vfill
+    \item To see all of the three address code generated by the compiler use
+      {\tt -fdump-tree-all}. You'll probably just be interested in the
+      optimized version.
+    \vfill
+    \item Use GIMPLE to reason about your code at a low level without
+      having to read assembly.
+  \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Live Coding Demo: GIMPLE}
+\end{frame}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Branch Prediction Hints}
+
+  \begin{changemargin}{1.5cm}
+  As seen earlier in class, {\tt gcc} allows you to give branch
+  prediction hints by calling this builtin function:
+
+  \begin{center}
+    \verb+long __builtin_expect (long exp, long c)+
+  \end{center}
+
+  The expected result is that {\tt exp} equals {\tt c}.\\[1em]
+  Compiler reorders code \& tells CPU the prediction.
+  
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{The {\tt restrict} Keyword}
+
+   \begin{changemargin}{2.5cm}
+   A new feature of C99: ``The restrict type qualifier allows programs to
+      be written so that translators can produce significantly faster
+      executables.''
+  \begin{itemize}
+    \item To request C99 in {\tt gcc}, use the {\tt -std=c99} flag.
+  \end{itemize}
+~\\
+   {\tt restrict} means: you are promising the
+      compiler that the pointer will never \structure{alias} (another pointer
+      will not point to the same data) for the lifetime of the pointer.
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Example of {\tt restrict} (1)}
+
+  \begin{changemargin}{2.5cm}
+    Pointers declared with {\tt restrict} must
+       never point to the same data.
+~\\[1em]
+    From Wikipedia:
+
+  \begin{lstlisting}
+void updatePtrs(int* ptrA, int* ptrB, int* val) {
+    *ptrA += *val;
+    *ptrB += *val;
+}
+  \end{lstlisting}
+ Would declaring all these pointers as
+      {\tt restrict} generate better code?
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Example of {\tt restrict} (2)}
+
+  \begin{changemargin}{2.5cm}
+    Let's look at the GIMPLE:
+
+  \begin{lstlisting}[numbers=left]
+void updatePtrs(int* ptrA, int* ptrB, int* val) {
+ D.1609 = *ptrA;
+ D.1610 = *val;
+ D.1611 = D.1609 + D.1610;
+ *ptrA = D.1611;
+ D.1612 = *ptrB;
+ D.1610 = *val;
+ D.1613 = D.1612 + D.1610;
+ *ptrB = D.1613;
+}
+  \end{lstlisting}
+
+  \begin{itemize}
+    \item Could any operation be left out if all the pointers
+      didn't overlap?
+  \end{itemize}  
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Example of {\tt restrict} (3)}
+
+  \begin{changemargin}{2.5cm}
+  \begin{lstlisting}[numbers=left]
+void updatePtrs(int* ptrA, int* ptrB, int* val) {
+ D.1609 = *ptrA;
+ D.1610 = *val;
+ D.1611 = D.1609 + D.1610;
+ *ptrA = D.1611;
+ D.1612 = *ptrB;
+ D.1610 = *val;
+ D.1613 = D.1612 + D.1610;
+ *ptrB = D.1613;
+}
+  \end{lstlisting}
+  \begin{itemize}
+    \item If {\tt ptrA} and {\tt val} are not equal, you don't have to
+      reload the data on {\bf line 7}.
+    \item Otherwise, you would: there might be a call\\{\tt ~~~~updatePtrs(\&x, \&y,
+      \&x);}
+  \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Example of {\tt restrict} (4)}
+  \begin{changemargin}{2.5cm}
+  Hence, this markup allows optimization:
+  \begin{lstlisting}
+void updatePtrs(int* restrict ptrA, 
+                int* restrict ptrB,
+                int* restrict val)
+  \end{lstlisting}
+  Note: you can get the optimization by just declaring {\tt ptrA} and
+      {\tt val} as {\tt restrict}; {\tt ptrB} isn't needed for this optimization
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Summary of {\tt restrict}}
+
+  \begin{changemargin}{2.5cm}
+  \begin{itemize}
+    \item Use {\tt restrict} whenever you know the pointer will not alias
+      another pointer (also declared {\tt restrict})
+  \end{itemize}
+
+    It's hard for the compiler to infer pointer aliasing information;
+    it's easier for you to specify it.\\[1em]
+
+    $\Rightarrow$ compiler can better optimize your code (more perf!)\\[1em]
+
+    Caveat: don't lie to the compiler, or  you will get
+      \alert{undefined behaviour}.\\[1em]
+
+    Aside: {\tt restrict} is not the same as {\tt const}. {\tt const} data can still be
+      changed through an alias.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Next topic: Dependencies}
+
+  \Large
+  \begin{changemargin}{2.5cm}
+     \structure{Dependencies} are the main
+      limitation to parallelization.\\[1em]
+     Example: computation must be evaulated as {\tt XY} and not {\tt YX}.\\[1em]
+  \end{changemargin}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Not synchronization}
+
+  \Large
+  \begin{changemargin}{2.5cm}
+      Assume (for now) no synchronization problems.\\[1em]
+      Only trying to identify code that is safe to run in
+      parallel.
+
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\part{Memory-carried Dependencies}
+\frametitle{\partpage}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Memory-carried Dependencies}
+\begin{changemargin}{2.5cm}
+\item Dependencies limit the amount of parallelization.
+\vfill
+Can we execute these 2 lines in parallel?
+\begin{lstlisting}
+x = 42
+x = x + 1  
+\end{lstlisting}
+\pause
+\alert{No.}\\[1em]
+\begin{itemize}
+\item Assume x initially 1. What are possible outcomes?
+\pause \newline \structure{~~~x = 43 or x = 42}\\[1em]
+
+\end{itemize}
+
+Next, we'll classify dependencies.
+
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Read After Read (RAR)}
+\begin{changemargin}{2.5cm}
+Can we execute these 2 lines in parallel? (initially x is 2)
+\begin{lstlisting}
+y = x + 1
+z = x + 5
+\end{lstlisting}
+\pause
+\structure{Yes.}\\[1em]
+\begin{itemize}
+\item Variables y and z are independent.
+\item Variable x is only read.
+\end{itemize}
+
+RAR dependency allows parallelization.
+
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Read After Write (RAW)}
+
+\begin{changemargin}{2.5cm}
+What about these 2 lines? (again, initially x is 2):
+\begin{lstlisting}
+x = 37
+z = x + 5
+\end{lstlisting}
+\pause
+\alert{No, z = 42 or z = 7.}\\[1em]
+
+RAW inhibits parallelization: can't change ordering.\\
+Also known as a \structure{true dependency}.
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Write After Read (WAR)}
+\begin{changemargin}{2.5cm}
+What if we change the order now? (again, initially x is 2)
+\begin{lstlisting}
+z = x + 5
+x = 37
+\end{lstlisting}
+\pause
+\alert{No. Again, z = 42 or z = 7.}\\[1em]
+\begin{itemize}
+\item WAR is also known as a \structure{anti-dependency}.
+\item But, we can modify this code to enable parallelization.
+\end{itemize}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Removing Write After Read (WAR) Dependencies}
+\begin{changemargin}{1.8cm}
+Make a copy of the variable:
+\begin{lstlisting}
+x_copy = x
+z = x_copy + 5
+x = 37
+\end{lstlisting}
+\pause
+\structure{We can now run the last 2 lines in parallel.}
+\begin{itemize}
+\item Induced a true dependency (RAW) between first 2 lines.
+\item Isn't that bad?
+\end{itemize}
+\pause
+Not always:
+\begin{lstlisting}
+z = very_long_function(x) + 5
+x = very_long_calculation()
+\end{lstlisting}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Write After Write (WAW)}
+\begin{changemargin}{2.5cm}
+Can we run these lines in parallel? (initially x is 2)
+\begin{lstlisting}
+z = x + 5
+z = x + 40
+\end{lstlisting}
+\pause
+\alert{Nope, z = 42 or z = 7}.\\[1em]
+\begin{itemize}
+\item WAW is also known as an \structure{output dependency}.
+\item We can remove this dependency (like WAR):
+\end{itemize}
+\pause
+\begin{lstlisting}
+z_copy = x + 5
+z = x + 40
+\end{lstlisting}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+\frametitle{Summary of Memory-carried Dependencies}
+\begin{center}
+\begin{tabular}{ll|p{2.8cm}p{3.2cm}}
+& & \multicolumn{2}{c}{Second Access} \\ 
+&  & \bf Read & \bf Write \\ \hline
+\multirow{2}{*}{First Access} & \bf Read & No Dependency Read After Read (RAR)  & Anti-dependency Write After Read (WAR) \\[0.5em]
+& \bf Write & True Dependency Read After Write (RAW) & Output Dependency Write After Write (WAW) \\
+\end{tabular}
+\end{center}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\end{document}
