@@ -1,0 +1,266 @@
+\documentclass[aspectratio=43]{beamer}
+
+% Text packages to stop warnings
+\usepackage{lmodern}
+\usepackage{textcomp}
+\usepackage{listings}
+\usepackage{multirow}
+
+% Themes
+\usetheme{Boadilla}
+\setbeamertemplate{footline}[page number]{}
+\setbeamertemplate{navigation symbols}{}
+
+% Suppress the navigation bar
+\beamertemplatenavigationsymbolsempty
+
+\lstset{basicstyle=\scriptsize, frame=single}
+
+\newenvironment{changemargin}[1]{% 
+  \begin{list}{}{% 
+    \setlength{\topsep}{0pt}% 
+    \setlength{\leftmargin}{#1}% 
+    \setlength{\rightmargin}{1em}
+    \setlength{\listparindent}{\parindent}% 
+    \setlength{\itemindent}{\parindent}% 
+    \setlength{\parsep}{\parskip}% 
+  }% 
+  \item[]}{\end{list}} 
+
+\title{Lecture 11---Dependencies}
+\date{January 28, 2015}
+
+\begin{document}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Roadmap}
+
+  \Large
+    \begin{changemargin}{2cm}
+      Last Time: C++ atomics; C Compilers\\
+      This Time: Dependencies
+    \end{changemargin}
+  
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Atomics when not using C++11}
+
+  \begin{changemargin}{2cm}
+    Not really.\\[1em]
+
+    {\tt gcc} supports atomics via extensions: \\
+  \end{changemargin}
+  \begin{changemargin}{1cm}
+    {\scriptsize
+      \url{https://gcc.gnu.org/onlinedocs/gcc/_005f_005fatomic-Builtins.html}}
+  \end{changemargin}
+
+  \begin{changemargin}{2cm}
+    OS X has atomics via OS calls: \\
+  \end{changemargin} {\scriptsize
+  \begin{changemargin}{1cm}
+    \url{https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/Multithreading/ThreadSafety/ThreadSafety.html}\\
+  \end{changemargin}
+  }
+  \begin{changemargin}{2cm}
+  etc\ldots \\[2em]
+    Reference:\\
+  \end{changemargin} {\scriptsize
+  \begin{changemargin}{.5cm}
+    \url{http://stackoverflow.com/questions/1130018/unix-portable-atomic-operations}
+  \end{changemargin}
+  }
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\part{Dependencies}
+\frame{\partpage}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Next topic: Dependencies}
+
+  \Large
+  \begin{changemargin}{2.5cm}
+     \structure{Dependencies} are the main
+      limitation to parallelization.\\[1em]
+     Example: computation must be evaulated as {\tt XY} and not {\tt YX}.\\[1em]
+  \end{changemargin}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Not synchronization}
+
+  \Large
+  \begin{changemargin}{2.5cm}
+      Assume (for now) no synchronization problems.\\[1em]
+      Only trying to identify code that is safe to run in
+      parallel.
+
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\part{Memory-carried Dependencies}
+\frametitle{\partpage}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Memory-carried Dependencies}
+\begin{changemargin}{2.5cm}
+\item Dependencies limit the amount of parallelization.
+\vfill
+Can we execute these 2 lines in parallel?
+\begin{lstlisting}
+x = 42
+x = x + 1  
+\end{lstlisting}
+\pause
+\alert{No.}\\[1em]
+\begin{itemize}
+\item Assume x initially 1. What are possible outcomes?
+\pause \newline \structure{~~~x = 43 or x = 42}\\[1em]
+
+\end{itemize}
+
+Next, we'll classify dependencies.
+
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Read After Read (RAR)}
+\begin{changemargin}{2.5cm}
+Can we execute these 2 lines in parallel? (initially x is 2)
+\begin{lstlisting}
+y = x + 1
+z = x + 5
+\end{lstlisting}
+\pause
+\structure{Yes.}\\[1em]
+\begin{itemize}
+\item Variables y and z are independent.
+\item Variable x is only read.
+\end{itemize}
+
+RAR dependency allows parallelization.
+
+\end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Read After Write (RAW)}
+
+\begin{changemargin}{2.5cm}
+What about these 2 lines? (again, initially x is 2):
+\begin{lstlisting}
+x = 37
+z = x + 5
+\end{lstlisting}
+\pause
+\alert{No, z = 42 or z = 7.}\\[1em]
+
+RAW inhibits parallelization: can't change ordering.\\
+Also known as a \structure{true dependency}.
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Write After Read (WAR)}
+\begin{changemargin}{2.5cm}
+What if we change the order now? (again, initially x is 2)
+\begin{lstlisting}
+z = x + 5
+x = 37
+\end{lstlisting}
+\pause
+\alert{No. Again, z = 42 or z = 7.}\\[1em]
+\begin{itemize}
+\item WAR is also known as a \structure{anti-dependency}.
+\item But, we can modify this code to enable parallelization.
+\end{itemize}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Removing Write After Read (WAR) Dependencies}
+\begin{changemargin}{1.8cm}
+Make a copy of the variable:
+\begin{lstlisting}
+x_copy = x
+z = x_copy + 5
+x = 37
+\end{lstlisting}
+\pause
+\structure{We can now run the last 2 lines in parallel.}
+\begin{itemize}
+\item Induced a true dependency (RAW) between first 2 lines.
+\item Isn't that bad?
+\end{itemize}
+\pause
+Not always:
+\begin{lstlisting}
+z = very_long_function(x) + 5
+x = very_long_calculation()
+\end{lstlisting}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Write After Write (WAW)}
+\begin{changemargin}{2.5cm}
+Can we run these lines in parallel? (initially x is 2)
+\begin{lstlisting}
+z = x + 5
+z = x + 40
+\end{lstlisting}
+\pause
+\alert{Nope, z = 42 or z = 7}.\\[1em]
+\begin{itemize}
+\item WAW is also known as an \structure{output dependency}.
+\item We can remove this dependency (like WAR):
+\end{itemize}
+\pause
+\begin{lstlisting}
+z_copy = x + 5
+z = x + 40
+\end{lstlisting}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+\frametitle{Summary of Memory-carried Dependencies}
+\begin{center}
+\begin{tabular}{ll|p{2.8cm}p{3.2cm}}
+& & \multicolumn{2}{c}{Second Access} \\ 
+&  & \bf Read & \bf Write \\ \hline
+\multirow{2}{*}{First Access} & \bf Read & No Dependency Read After Read (RAR)  & Anti-dependency Write After Read (WAR) \\[0.5em]
+& \bf Write & True Dependency Read After Write (RAW) & Output Dependency Write After Write (WAW) \\
+\end{tabular}
+\end{center}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\end{document}
