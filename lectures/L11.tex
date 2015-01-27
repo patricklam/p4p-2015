@@ -1,0 +1,217 @@
+\documentclass[11pt]{article}
+\usepackage{listings}
+\usepackage{tikz}
+\usepackage{url}
+\usepackage{hyperref}
+%\usepackage{algorithm2e}
+\usetikzlibrary{arrows,automata,shapes,positioning}
+\tikzstyle{block} = [rectangle, draw, fill=blue!20, 
+    text width=2.5em, text centered, rounded corners, minimum height=2em]
+\tikzstyle{bw} = [rectangle, draw, fill=blue!20, 
+    text width=3.5em, text centered, rounded corners, minimum height=2em]
+
+\newcommand{\handout}[5]{
+  \noindent
+  \begin{center}
+  \framebox{
+    \vbox{
+      \hbox to 5.78in { {\bf ECE459: Programming for Performance } \hfill #2 }
+      \vspace{4mm}
+      \hbox to 5.78in { {\Large \hfill #5  \hfill} }
+      \vspace{2mm}
+      \hbox to 5.78in { {\em #3 \hfill #4} }
+    }
+  }
+  \end{center}
+  \vspace*{4mm}
+}
+
+\lstset{basicstyle=\ttfamily \scriptsize}
+
+\newcommand{\lecture}[4]{\handout{#1}{#2}{#3}{#4}{Lecture #1}}
+\topmargin 0pt
+\advance \topmargin by -\headheight
+\advance \topmargin by -\headsep
+\textheight 8.9in
+\oddsidemargin 0pt
+\evensidemargin \oddsidemargin
+\marginparwidth 0.5in
+\textwidth 6.5in
+
+\parindent 0in
+\parskip 1.5ex
+%\renewcommand{\baselinestretch}{1.25}
+
+% http://gurmeet.net/2008/09/20/latex-tips-n-tricks-for-conference-papers/
+\newcommand{\squishlist}{
+ \begin{list}{$\bullet$}
+  { \setlength{\itemsep}{0pt}
+     \setlength{\parsep}{3pt}
+     \setlength{\topsep}{3pt}
+     \setlength{\partopsep}{0pt}
+     \setlength{\leftmargin}{1.5em}
+     \setlength{\labelwidth}{1em}
+     \setlength{\labelsep}{0.5em} } }
+\newcommand{\squishlisttwo}{
+ \begin{list}{$\bullet$}
+  { \setlength{\itemsep}{0pt}
+     \setlength{\parsep}{0pt}
+    \setlength{\topsep}{0pt}
+    \setlength{\partopsep}{0pt}
+    \setlength{\leftmargin}{2em}
+    \setlength{\labelwidth}{1.5em}
+    \setlength{\labelsep}{0.5em} } }
+\newcommand{\squishend}{
+  \end{list}  }
+
+\begin{document}
+
+\lecture{11 --- January 28, 2015}{Winter 2015}{Patrick Lam}{version 0}
+
+We talked about C++11 atomics last time. Someone asked about whether
+there was a Pthreads equivalent. Nope, not really.
+
+{\tt gcc} supports atomics via extensions: \\
+\url{https://gcc.gnu.org/onlinedocs/gcc/_005f_005fatomic-Builtins.html}
+
+OS X has atomics via OS calls: \\
+\url{https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/Multithreading/ThreadSafety/ThreadSafety.html}
+
+etc\ldots
+
+Reference:
+\url{http://stackoverflow.com/questions/1130018/unix-portable-atomic-operations}
+
+\section*{Dependencies}
+I've said that some computations appear to be ``inherently sequential''.
+Here's why.
+
+\paragraph{Main Idea.} A \emph{dependency} prevents parallelization
+when the computation $XY$ produces a different result from the
+computation $YX$.
+
+\paragraph{Loop- and Memory-Carried Dependencies.} We distinguish
+between \emph{loop-carried} and \emph{memory-carried} dependencies.
+In a loop-carried dependency, an iteration depends on the result of
+the previous iteration. For instance, consider this code to
+compute whether a complex number $x_0 + iy_0$ belongs to the Mandelbrot
+set.
+
+{\small \begin{verbatim}
+    // Repeatedly square input, return number of iterations before 
+    // absolute value exceeds 4, or 1000, whichever is smaller.
+    int inMandelbrot(double x0, double y0) {
+      int iterations = 0;
+      double x = x0, y = y0, x2 = x*x, y2 = y*y;
+      while ((x2+y2 < 4) && (iterations < 1000)) {
+        y = 2*x*y + y0;
+        x = x2 - y2 + x0;
+        x2 = x*x; y2 = y*y;
+        iterations++;
+      }
+      return iterations;
+    }
+\end{verbatim} }
+In this case, it's impossible to parallelize loop iterations, because
+each iteration \emph{depends} on the $(x, y)$ values calculated in the
+previous iteration. For any particular $x_0 + iy_0$, you have to run the
+loop iterations sequentially.
+
+Note that you can parallelize the Mandelbrot set calculation
+by computing the result simultaneously over many points at
+once. Indeed, that is a classic ``embarassingly parallel'' problem,
+because the you can compute the result for all of the points
+simultaneously, with no need to communicate.
+
+On the other hand, a memory-carried dependency is one where the result
+of a computation \emph{depends} on the order in which two memory accesses
+occur. For instance:
+
+{\small \begin{verbatim}
+    int val = 0;
+
+    void g() { val = 1; }
+    void h() { val = val + 2; }
+\end{verbatim} }
+
+{\sf What are the possible outcomes after executing {\tt g()} and {\tt h()}
+in parallel threads?} \\[1em]
+
+\subsection*{RAW, WAR, WAW and RAR}
+The most obvious case of a dependency is as follows:
+{\small \begin{verbatim}
+    int y = f(x);
+    int z = g(y);
+\end{verbatim} }
+This is a read-after-write (RAW), or ``true'' dependency: the first
+statement writes {\tt y} and the second statement reads it.
+Other types of dependencies are:
+
+\begin{center}
+\begin{tabular}{l|ll}
+& {\bf Read 2nd} & {\bf Write 2nd} \\ \hline
+{\bf Read 1st} & Read after read (RAR) & Write after read (WAR) \\
+& No dependency & Antidependency \\
+{\bf Write 1st} & Read after write (RAW) & Write after write (WAW) \\
+& True dependency & Output dependency
+\end{tabular}
+\end{center}
+
+The no-dependency case (RAR) is clear. Declaring data immutable 
+in your program is a good way to ensure no dependencies.
+
+Let's look at an antidependency (WAR) example.
+
+{\small \begin{center}
+\begin{tabular}{ll}
+\begin{minipage}{.4\textwidth}
+\begin{verbatim}
+void antiDependency(int z) {
+  int y = f(x);
+  x = z + 1;
+}
+\end{verbatim}
+\end{minipage} &
+\begin{minipage}{.4\textwidth}
+\begin{verbatim}
+void fixedAntiDependency(int z) {
+  int x_copy = x;
+  int y = f(x_copy);
+  x = z + 1;
+}
+\end{verbatim}
+\end{minipage} 
+\end{tabular}
+\end{center} }
+{\sf Why is there a problem?}\\[2em]
+
+Finally, WAWs can also inhibit parallelization:
+
+{\small \begin{center}
+\begin{tabular}{ll}
+\begin{minipage}{.45\textwidth}
+\begin{verbatim}
+void outputDependency(int x, int z) {
+  y = x + 1;
+  y = z + 1;
+}
+\end{verbatim}
+\end{minipage} &
+\begin{minipage}{.4\textwidth}
+\begin{verbatim}
+void fixedOutputDependency(int x, int z) {
+  y_copy = x + 1;
+  y = z + 1;
+}
+\end{verbatim}
+\end{minipage} 
+\end{tabular}
+\end{center} }
+
+In both of these cases, renaming or copying data can
+eliminate the dependence and enable parallelization. Of course,
+copying data also takes time and uses cache, so it's not free. One
+might change the output locations of both statements and then copy in
+the correct output.
+
+\end{document}
