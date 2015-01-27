@@ -66,12 +66,7 @@
 
 \begin{document}
 
-\lecture{7 --- January 19, 2015}{Winter 2015}{Patrick Lam}{version 0}
-
-\paragraph{Conceptual view: non-blocking I/O.} Fundamentally,
-there are two ways to find out whether I/O is ready to be queried:
-polling (under UNIX, implemented via {\tt select}, {\tt poll},
-and {\tt epoll}) and interrupts (under UNIX, signals).
+\lecture{7 --- January 19, 2015}{Winter 2015}{Patrick Lam}{version 1}
 
 We will describe {\tt epoll} in lecture. It is the most modern and
 flexible interface. Unfortunately, I didn't realize that the obvious
@@ -139,7 +134,20 @@ One relevant concept for these polling APIs is the concept of
 ready. One can also specify (via {\tt epoll\_ctl}) edge-triggered
 behaviour: return whenever there is a change in readiness.
 
-We'll have a live coding demo in lecture 7.
+We did a live coding demo; here are more details. The example was some code
+(see {\tt L07-socket.c} in the code examples) that created a server and
+read from that server in either level-triggered mode or edge-triggered
+mode. 
+
+One would think that level-triggered mode would return from {\tt read}
+whenever data was available, while edge-triggered mode would return
+from {\tt read} whenever new data came in. Level-triggered does behave
+as one would guess: if there is data available, {\tt read()} returns
+the data. However, edge-triggered mode returns whenever the
+state-of-readiness of the socket changes (from no-data-available to
+data-available). Play with it and get a sense for how it works.
+
+Good question to think about: when is it appropriate to choose one or the other?
 
 \subsection*{Asynchronous I/O}
 As mentioned above, the POSIX standard defines {\tt aio} calls.
@@ -166,22 +174,6 @@ Briefly, you:
 \item invoke the transfers and wait for them to finish; and
 \item see how things went.
 \end{itemize}
-
-\paragraph{Edge-triggered vs level-triggered.} We did a live coding demo
-and I promised more details in the notes. The example was some code
-(see {\tt socket.c} in the code examples) that created a server and
-read from that server in either level-triggered mode or edge-triggered
-mode. 
-
-One would think that level-triggered mode would return from {\tt read}
-whenever data was available, while edge-triggered mode would return
-from {\tt read} whenever new data came in. Level-triggered does behave
-as one would guess: if there is data available, {\tt read()} returns
-the data. However, edge-triggered mode returns whenever the
-state-of-readiness of the socket changes (from no-data-available to
-data-available). Play with it and get a sense for how it works.
-
-Good question to think about: when is it appropriate to choose one or the other?
 
 \section*{curl\_multi}
 It's important to see at least one specific example of an idea. I talked about
@@ -254,8 +246,14 @@ The return value \verb+msg->msg+ can be either {\tt CURLMSG\_DONE} or an error.
 The handle \verb+msg->easy_handle+ tells you which handle finished. You may have
 to look that up in your collection of handles.
 
+Some gotchas (thanks Desiye Collier):
+\begin{itemize}
+\item Checking \verb+msg->msg == CURLMSG_DONE+ is not sufficient to ensure that a curl request actually happened. You also need to check {\tt data.result}.
+\item (A1 hint:) To reset an individual handle in the {\tt multi\_handle}, you need to ``replace'' it. But you shouldn't use {\tt curl\_easy\_init()} to replace the handle.  In fact, you don't need a new handle at all.
+\end{itemize}
+
 \paragraph{Cleanup.} Always clean up after yourself! Use {\tt curl\_multi\_cleanup}
-to destroy the multi-handle and {\tt curl\_easy\_cleanup} to destroy each individual handle.
+to destroy the multi-handle and {\tt curl\_easy\_cleanup} to destroy each individual handle. If you replace the {\tt curl\_easy\_init} call by {\tt curl\_global\_init} for the multithreaded case (which is a good idea), then you should use {\tt curl\_global\_cleanup} to clean up.
 
 \paragraph{Example.}
 There is a not-great example at 
@@ -265,6 +263,11 @@ There is a not-great example at
 but I'm not even sure it works verbatim. You could use it as a solution template,
 but you'll need to add more code---I asked you to replace completed transfers in the
 {\tt curl\_multi}.
+
+\paragraph{A better way to use sockets.} Late-breaking news: instead
+of that {\tt select()} crud, use {\tt curl\_multi\_wait()}, which is
+just better, and easy to use. An example:
+\url{https://gist.github.com/clemensg/4960504}
 
 \paragraph{About that socket-based alternative.} There is yet another interface which
 would allow you to use {\tt epoll}, but I couldn't figure it out. Sorry. The advantage,
@@ -295,601 +298,6 @@ There's an example, which has too many moving parts, here:
 \url{http://curl.haxx.se/libcurl/c/hiperfifo.html}
 \end{center}
 It uses {\tt libevent}, which I totally don't want to talk about in this class.
-
-\section*{Race Conditions}
-Previous courses should have introduced the concept of a race condition.
-We'll be talking about them in greater detail in this course.
-
-\paragraph{Definition.} A race occurs when you have two concurrent accesses to the
-same memory location, at least one of which is a {\bf write}.
-
-When there's a race, the final state may not be the same as running
-one access to completion and then the other. (But it sometimes is.)
-Race conditions typically arise between variables which are shared
-between threads.
-
-\paragraph{Example.}
-\begin{lstlisting}
-#include <stdlib.h>
-#include <stdio.h>
-#include <pthread.h>
-
-void* run1(void* arg)
-{
-    int* x = (int*) arg;
-    *x += 1;
-}
-
-void* run2(void* arg)
-{
-    int* x = (int*) arg;
-    *x += 2;
-}
-
-int main(int argc, char *argv[])
-{
-    int* x = malloc(sizeof(int));
-    *x = 1;
-    pthread_t t1, t2;
-    pthread_create(&t1, NULL, &run1, x);
-    pthread_join(t1, NULL);
-    pthread_create(&t2, NULL, &run2, x);
-    pthread_join(t2, NULL);
-    printf("%d\n", *x);
-    free(x);
-    return EXIT_SUCCESS;
-}
-\end{lstlisting}
-
-\noindent
-Question: Do we have a data race? Why or why not?
-\vspace*{2em}
-%No, we don't. Only one thread is active at a time.
-
-\paragraph{Example 2.} Here's another example; keep the same thread definitions.
-\begin{lstlisting}
-int main(int argc, char *argv[])
-{
-    int* x = malloc(sizeof(int));
-    *x = 1;
-    pthread_t t1, t2;
-    pthread_create(&t1, NULL, &run1, x);
-    pthread_create(&t2, NULL, &run2, x);
-    pthread_join(t1, NULL);
-    pthread_join(t2, NULL);
-    printf("%d\n", *x);
-    free(x);
-    return EXIT_SUCCESS;
-}
-\end{lstlisting}
-
-Now do we have a data race? Why or why not?
-\vspace*{2em}
-
-% Yes, we do. We have 2 threads concurrently accessing the same data.
-
-\paragraph{Tracing our Example Data Race.} 
-What are the possible outputs? (Assume that initially {\tt *x} is 1.)
-We'll look at compiler intermediate code (three-address code) to tell.
-
-\hspace*{.2\textwidth}\begin{minipage}{.8\textwidth}
-\begin{lstlisting}[numbers=left]
-run1                          run2   
-D.1 = *x;                     D.1 = *x;
-D.2 = D.1 + 1;                D.2 = D.1 + 2
-*x = D.2;                     *x = D.2;
-  \end{lstlisting}
-\end{minipage}
-
-Memory reads and writes are key in data~races.
-
-Let's call the read and write from {\tt run1} R1 and W1; R2 and W2
-from {\tt run2}. Assuming a sane\footnote{sequentially consistent; sadly, many
-widely-used models are wilder than this.}
-memory model, $R_n$ must precede $W_n$.
-
-\newpage
-Here are all possible orderings:
-  \begin{center}
-    \begin{tabular}{llll|l}
-\multicolumn{4}{c|}{Order} & {\tt *x}\\
-\hline
-R1 & W1 & R2 & W2 & 4 \\
-R1 & R2 & W1 & W2 & 3 \\
-R1 & R2 & W2 & W1 & 2 \\
-R2 & W2 & R1 & W1 & 4 \\
-R2 & R1 & W2 & W1 & 2 \\
-R2 & R1 & W1 & W2 & 3 \\
-    \end{tabular}
-  \end{center}
-
-\subsection*{Detecting Data Races Automatically}  
-Dynamic and static tools exist. They can help you find data races in
-your program. {\tt helgrind} is one such tool. It runs your program 
-and analyzes it (and causes a large slowdown).
-
-Run with {\tt valgrind --tool=helgrind <prog>}.
-
-It will warn you of possible data races along with locations. For
-useful debugging information, compile your program with debugging
-information ({\tt -g} flag for {\tt gcc}).
-
-\paragraph{Helgrind Output for Example.}
-\begin{lstlisting}
-==5036== Possible data race during read of size 4 at
-         0x53F2040 by thread #3
-==5036== Locks held: none
-==5036==    at 0x400710: run2 (in datarace.c:14)
-...
-==5036== 
-==5036== This conflicts with a previous write of size 4 by
-         thread #2
-==5036== Locks held: none
-==5036==    at 0x400700: run1 (in datarace.c:8)
-...
-==5036== 
-==5036== Address 0x53F2040 is 0 bytes inside a block of size
-         4 alloc'd
-...
-==5036==    by 0x4005AE: main (in datarace.c:19)
-\end{lstlisting}
-
-\section*{Synchronization}
-You'll need some sort of synchronization to get sane results from
-multithreaded programs. We'll start by talking about how to use
-mutual exclusion in Pthreads.
-
-\paragraph{Mutual Exclusion.} Mutexes are the most basic type of synchronization.
-As a reminder:
-    \begin{itemize}
-    \item Only one thread can access code protected by a mutex at a time.
-    \item All other threads must wait until the mutex is free before they can
-      execute the protected code.
-    \end{itemize}
-
-Here's an example of using mutexes:
-  \begin{lstlisting}
-pthread_mutex_t m1_static = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t m2_dynamic;
-
-pthread_mutex_init(&m2_dynamic, NULL);
-...
-pthread_mutex_destroy(&m1_static);
-pthread_mutex_destroy(&m2_dynamic);
-  \end{lstlisting}
-
-You can initialize mutexes statically (as with {\tt m1\_static}) or
-dynamically ({\tt m2\_dynamic}). If you want to include attributes,
-you need to use the dynamic version.
-
-\paragraph{Mutex Attributes.} Both threads and mutexes use the notion of attributes.
-We won't talk about mutex attributes in any detail, but here are the three standard ones.
-  \begin{itemize}
-    \item {\bf Protocol}: specifies the protocol used to prevent priority
-      inversions for a mutex.
-    \item {\bf Prioceiling}: specifies the priority ceiling of a mutex.
-    \item {\bf Process-shared}: specifies the process sharing of a mutex.
-  \end{itemize}
-  You can specify a mutex as {\it process shared} so that you can access it
-  between processes. In that case, you need to use shared memory and {\tt mmap},
-  which we won't get into.
-
-\paragraph{Mutex Example.} Let's see how this looks in practice. It is fairly simple:
-  \begin{lstlisting}
-// code
-pthread_mutex_lock(&m1);
-// protected code
-pthread_mutex_unlock(&m1);
-// more code
-  \end{lstlisting}
-
-  \begin{itemize}
-    \item Everything within the {\tt lock} and {\tt unlock} is protected.
-    \item Be careful to avoid deadlocks if you are using multiple mutexes (always
-acquire locks in the same order across threads).
-    \item Another useful primitive is {\tt pthread\_mutex\_trylock}. We may come back to this
-later.
-  \end{itemize}
-
-\subsection*{Data Races}
-Why are we bothering with locks? Data races. A data race occurs when
-two concurrent actions access the same variable and at least one of
-them is a {\bf write}. (This shows up on Assignment 1!)
-
-  \begin{lstlisting}
-...
-static int counter = 0;
-
-void* run(void* arg) {
-    for (int i = 0; i < 100; ++i) {
-        ++counter;
-    }
-}
-
-int main(int argc, char *argv[])
-{
-    // Create 8 threads
-    // Join 8 threads
-    printf("counter = %i\n", counter);
-}
-  \end{lstlisting}
-
-Is there a datarace in this example? If so, how would we fix it?
-
-\paragraph{Solution: use mutexes.}
-  \begin{lstlisting}[escapechar=!]
-...
-!\bf{static pthread\_mutex\_t mutex = PTHREAD\_MUTEX\_INITIALIZER;}!
-static int counter = 0;
-
-void* run(void* arg) {
-    for (int i = 0; i < 100; ++i) {
-        !\bf{pthread\_mutex\_lock(\&mutex);}!
-        ++counter;
-        !\bf{pthread\_mutex\_unlock(\&mutex);}!
-    }
-}
-
-int main(int argc, char *argv[])
-{
-    // Create 8 threads
-    // Join 8 threads
-    !\bf{pthread\_mutex\_destroy(\&mutex);}!
-    printf("counter = %i\n", counter);
-}
-  \end{lstlisting}
-
-\section*{More Synchronization primitives}
-
-We'll proceed in order of complexity.
-
-\paragraph{Recap: mutexes.} Recall that our goal in this course is
-to be able to use mutexes correctly. You should have seen how to 
-implement them in an operating systems course. Here's how to use them.
-
-\begin{itemize}
-\item Call {\tt lock} on mutex $\ell_1$. Upon return from
-      {\tt lock}, your thread has exclusive access to $\ell_1$ until it
-      {\tt unlock}s it.
-\item Other calls to {\tt lock} $\ell_1$ will not return
-      until {\tt m1} is available.
-\end{itemize}
-
- For background on implementing mutual exclusion, see
- \href{http://en.wikipedia.org/wiki/Lamport\%27s_bakery_algorithm}
-      {Lamport's bakery algorithm}. Implementation details are not in
-      scope for this course.
-
-Key idea: locks protect resources; only one thread
-can hold a lock at a time. A second thread trying to obtain the lock
-(i.e. \emph{contending} for the lock) has to wait, or \emph{block},
-until the first thread releases the lock. So only one thread has
-access to the protected resource at a time. The code between the lock
-acquisition and release is known as the \emph{critical region}.
-
-Some mutex implementations also provide a ``try-lock'' primitive,
-which grabs the lock if it's available, or returns control to the
-thread if it's not, thus enabling the thread to do something else. (Kind of
-like non-blocking I/O!)
-
-Excessive use of locks can serialize programs. Consider two resources
-$A$ and $B$ protected by a single lock $\ell$. Then a thread that's
-just interested in $B$ still has acquire $\ell$, which requires it to
-wait for any other thread working with $A$. (The Linux kernel used to
-rely on a Big Kernel Lock protecting lots of resources in the 2.0 era,
-and Linux 2.2 improved performance on SMPs by cutting down on the use
-of the BKL.)
-
-Note: in Windows, the term ``mutex'' refers to an inter-process
-communication mechanism. ``Critical sections'' are the mutexes we're
-talking about above.
-
-\paragraph{Spinlocks.} Spinlocks are a variant of mutexes, where the
-waiting thread repeatedly tries to acquire the lock instead of sleeping.
-Use spinlocks when you expect critical sections to finish 
-quickly\footnote{For more information on spinlocks in the Linux
-kernel, see \url{http://lkml.org/lkml/2003/6/14/146}.}. Spinning
-for a long time consumes lots of CPU resources. Many lock
-implementations use both sleeping and spinlocks: spin for a bit,
-then sleep for longer. At some point, we saw a live coding example
-comparing spinlocks to normal mutexes.
-
-\paragraph{Reader/Writer Locks.} Recall that data races only happen when
-one of the concurrent accesses is a write. So, if you have read-only
-(``immutable'') data, as often occurs in functional programs, you don't need
-to protect access to that data. For instance, your program might
-have an initialization phase, where you write some data, and then a 
-query phase, where you use multiple threads to read the data.
-
-Unfortunately, sometimes your data is not read-only. It might, for instance,
-be rarely updated. Locking the data every time would be inefficient.
-The answer is to instead use a \emph{reader/writer} lock. Multiple
-threads can hold the lock in read mode, but only one thread can hold the
-lock in write mode, and it will block until all the readers are done 
-reading.
-
-\begin{verbatim}
-  int readData(int c1, int c2) {              // glib usage example
-    g_static_rw_lock_reader_lock (&rwlock);
-    int result = data[c1] + data[c2];
-    g_static_rw_lock_reader_unlock (&rwlock);
-  }
-
-  void writeData(int c1, int c2, int value) {
-    g_static_rw_lock_writer_lock (&rwlock);
-    data[c1] += value; data[c2] -= value;
-    g_static_rw_lock_writer_unlock (&rwlock);
-  }
-\end{verbatim}
-
-\paragraph{Semaphores/condition variables.} 
-While semaphores can keep track of a counter and can implement
-mutexes, you should use them to support signalling between threads or
-processes.
-
-In pthreads, semaphores can also be used for inter-process communication,
-while condition variables are like Java's {\tt wait()}/{\tt notify()}.
-
-\paragraph{Barriers.} This synchronization primitive allows you 
-to make sure that a collection of threads all reach the
-barrier before finishing. In pthreads, each thread should call
-\verb+pthread_barrier_wait()+, which will proceed when enough threads
-have reached the barrier. Enough means a number you specify upon
-barrier creation.
-
-\paragraph{Lock-Free Code.} We'll talk more about this in a few weeks.
-Modern CPUs support atomic operations, such as compare-and-swap, which
-enable experts to write lock-free code. A recent research 
-result~\cite{mckenney11:_concur,Attiya:2011:LOE:1926385.1926442} states the requirements for correct implementations: basically,
-such implementations must contain certain synchronization constructs.
-
-\section*{Semaphores}
-As you learned in previous courses, semaphores have a {\tt value} and
-can be used for signalling between threads. When you create a semaphore,
-you specify an initial value for that semaphore. Here's how they work.
-
-\begin{itemize}
-\item The {\tt value} can be understood to represent the number of resources available.
-\item A semaphore has two fundamental operations: {\tt wait} and 
-{\tt post}.
-\item {\tt wait} reserves one instance of the protected resource, if currently
-available---that is, if {\tt value} is currently above 0. If {\tt value} 
-is 0, then {\tt wait} suspends the thread until some other thread makes
-the resource available.
-\item {\tt post} releases one instance of the protected resource,
-incrementing {\tt value}.
-\end{itemize}
-
-\paragraph{Semaphore Usage.} Here are the relevant API calls.
-  \begin{lstlisting}
-#include <semaphore.h>
-
-int sem_init(sem_t *sem, int pshared, unsigned int value);
-int sem_destroy(sem_t *sem);
-int sem_post(sem_t *sem);
-int sem_wait(sem_t *sem);
-int sem_trywait(sem_t *sem);
-  \end{lstlisting}
-
-This API is a lot like the mutex API:
-  \begin{itemize}
-    \item must link with {\tt -pthread} (or {\tt -lrt} on Solaris);
-    \item all functions return {\tt 0} on success;
-    \item same usage as mutexes in terms of passing pointers.
-  \end{itemize}
-
-\noindent
-How could you use a {\tt semaphore} as a {\tt mutex}?
-\vspace*{3em}
-
-% If the initial {\tt value} is 1 and you use {\tt wait} to lock
-% and {\tt post} to unlock, it's equivalent to a {\tt mutex}
-
-\paragraph{Semaphores for Signalling.}
-Here's an example from the book. How would you make this always print
-``Thread 1'' then ``Thread 2'' using semaphores?
-
-\begin{lstlisting}
-#include <pthread.h>
-#include <stdio.h>
-#include <semaphore.h>
-#include <stdlib.h>
-
-void* p1 (void* arg) { printf("Thread 1\n"); }
-
-void* p2 (void* arg) { printf("Thread 2\n"); }
-
-int main(int argc, char *argv[])
-{
-    pthread_t thread[2];
-    pthread_create(&thread[0], NULL, p1, NULL);
-    pthread_create(&thread[1], NULL, p2, NULL);
-    pthread_join(thread[0], NULL);
-    pthread_join(thread[1], NULL);
-    return EXIT_SUCCESS;
-}
-\end{lstlisting}
-
-\paragraph{Proposed Solution.} Is it actually correct?
-
-\begin{lstlisting}
-sem_t sem;
-void* p1 (void* arg) {
-  printf("Thread 1\n");
-  sem_post(&sem);
-}
-void* p2 (void* arg) {
-  sem_wait(&sem);
-  printf("Thread 2\n");
-}
-
-int main(int argc, char *argv[])
-{
-    pthread_t thread[2];
-    sem_init(&sem, 0, /* value: */ 1);
-    pthread_create(&thread[0], NULL, p1, NULL);
-    pthread_create(&thread[1], NULL, p2, NULL);
-    pthread_join(thread[0], NULL);
-    pthread_join(thread[1], NULL);
-    sem_destroy(&sem);
-}
-\end{lstlisting}
-
-Well, let's reason through it.  
-  \begin{itemize}
-    \item {\tt value} is initially 1.
-    \item Say {\tt p2} hits its {\tt sem\_wait} first and succeeds.
-    \item {\tt value} is now 0 and {\tt p2} prints ``Thread 2'' first.
-    \item It would be OK if {\tt p1} happened first. That would just increase
-      {\tt value} to 2.
-    \end{itemize}
-
-Fix: set the initial {\tt value} to 0. Then, if {\tt p2} hits
-its {\tt sem\_wait} first, it will not print until {\tt p1} posts, which is after 
-{\tt p1} prints ``Thread 1''.
-
-
-\section*{Race Conditions}
-We'll next use our knowledge of three address code to analyze
-potential race conditions more rigourously.
-
-\paragraph{Definition.} A race occurs when you have two concurrent accesses to the
-same memory location, at least one of which is a {\bf write}.
-
-When there's a race, the final state may not be the same as running
-one access to completion and then the other. (But it sometimes is.)
-Race conditions typically arise between variables which are shared
-between threads.
-
-\paragraph{Example.}
-\begin{lstlisting}
-#include <stdlib.h>
-#include <stdio.h>
-#include <pthread.h>
-
-void* run1(void* arg)
-{
-    int* x = (int*) arg;
-    *x += 1;
-}
-
-void* run2(void* arg)
-{
-    int* x = (int*) arg;
-    *x += 2;
-}
-
-int main(int argc, char *argv[])
-{
-    int* x = malloc(sizeof(int));
-    *x = 1;
-    pthread_t t1, t2;
-    pthread_create(&t1, NULL, &run1, x);
-    pthread_join(t1, NULL);
-    pthread_create(&t2, NULL, &run2, x);
-    pthread_join(t2, NULL);
-    printf("%d\n", *x);
-    free(x);
-    return EXIT_SUCCESS;
-}
-\end{lstlisting}
-
-\noindent
-Question: Do we have a data race? Why or why not?
-\vspace*{2em}
-%No, we don't. Only one thread is active at a time.
-
-\paragraph{Example 2.} Here's another example; keep the same thread definitions.
-\begin{lstlisting}
-int main(int argc, char *argv[])
-{
-    int* x = malloc(sizeof(int));
-    *x = 1;
-    pthread_t t1, t2;
-    pthread_create(&t1, NULL, &run1, x);
-    pthread_create(&t2, NULL, &run2, x);
-    pthread_join(t1, NULL);
-    pthread_join(t2, NULL);
-    printf("%d\n", *x);
-    free(x);
-    return EXIT_SUCCESS;
-}
-\end{lstlisting}
-
-Now do we have a data race? Why or why not?
-\vspace*{2em}
-
-% Yes, we do. We have 2 threads concurrently accessing the same data.
-
-\paragraph{Tracing our Example Data Race.} 
-What are the possible outputs? (Assume that initially {\tt *x} is 1.)
-We'll look at the three-address code to tell.
-
-\hspace*{.2\textwidth}\begin{minipage}{.8\textwidth}
-\begin{lstlisting}[numbers=left]
-run1                          run2   
-D.1 = *x;                     D.1 = *x;
-D.2 = D.1 + 1;                D.2 = D.1 + 2
-*x = D.2;                     *x = D.2;
-  \end{lstlisting}
-\end{minipage}
-
-Memory reads and writes are key in data~races.
-
-Let's call the read and write from {\tt run1} R1 and W1; R2 and W2
-from {\tt run2}. Assuming a sane\footnote{sequentially consistent; sadly, many
-widely-used models are wilder than this.}
-memory model, $R_n$ must precede $W_n$.
-
-\newpage
-Here are all possible orderings:
-  \begin{center}
-    \begin{tabular}{llll|l}
-\multicolumn{4}{c|}{Order} & {\tt *x}\\
-\hline
-R1 & W1 & R2 & W2 & 4 \\
-R1 & R2 & W1 & W2 & 3 \\
-R1 & R2 & W2 & W1 & 2 \\
-R2 & W2 & R1 & W1 & 4 \\
-R2 & R1 & W2 & W1 & 2 \\
-R2 & R1 & W1 & W2 & 3 \\
-    \end{tabular}
-  \end{center}
-
-\subsection*{Detecting Data Races Automatically}  
-Dynamic and static tools exist. They can help you find data races in
-your program. {\tt helgrind} is one such tool. It runs your program 
-and analyzes it (and causes a large slowdown).
-
-Run with {\tt valgrind --tool=helgrind <prog>}.
-
-It will warn you of possible data races along with locations. For
-useful debugging information, compile your program with debugging
-information ({\tt -g} flag for {\tt gcc}).
-
-\paragraph{Helgrind Output for Example.}
-\begin{lstlisting}
-==5036== Possible data race during read of size 4 at
-         0x53F2040 by thread #3
-==5036== Locks held: none
-==5036==    at 0x400710: run2 (in datarace.c:14)
-...
-==5036== 
-==5036== This conflicts with a previous write of size 4 by
-         thread #2
-==5036== Locks held: none
-==5036==    at 0x400700: run1 (in datarace.c:8)
-...
-==5036== 
-==5036== Address 0x53F2040 is 0 bytes inside a block of size
-         4 alloc'd
-...
-==5036==    by 0x4005AE: main (in datarace.c:19)
-\end{lstlisting}
-
-
-\bibliographystyle{alpha}
-\bibliography{L07}
 
 
 \end{document}

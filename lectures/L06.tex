@@ -195,4 +195,9 @@ asynchronously and not, for instance, wait for the disk to spin up.
 We won't talk about them, but they operate along the same lines as what
 we will see. They just have a different API.
 
+\paragraph{Conceptual view: non-blocking I/O.} Fundamentally,
+there are two ways to find out whether I/O is ready to be queried:
+polling (under UNIX, implemented via {\tt select}, {\tt poll},
+and {\tt epoll}) and interrupts (under UNIX, signals).
+
 \end{document}

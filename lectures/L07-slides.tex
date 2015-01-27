@@ -26,7 +26,7 @@
   }% 
   \item[]}{\end{list}} 
 
-\title{Lecture 07---Async I/O}
+\title{Lecture 07---{\tt epoll}, async I/O, curl\_multi}
 \date{January 19, 2015}
 
 \begin{document}
@@ -339,7 +339,15 @@ Upon return from {\tt epoll\_wait}, we have {\tt nr\_events} events ready.
   \begin{changemargin}{2cm}
     and also how many messages are left.\\[1em]
     {\tt msg->msg} can be {\tt CURLMSG\_DONE} or an error;\\
-    {\tt msg->easy\_handle} tells you who is done.
+    {\tt msg->easy\_handle} tells you who is done.\\[1em]
+  \end{changemargin}
+  \begin{changemargin}{1.25cm}
+    Some gotchas (thanks Desiye Collier):
+    \begin{itemize}
+    \item Checking \verb+msg->msg == CURLMSG_DONE+ is not sufficient to ensure that a curl request actually happened. You also need to check {\tt data.result}.
+
+    \item (A1 hint:) To reset an individual handle in the {\tt multi\_handle}, you need to ``replace'' it. But you shouldn't use {\tt curl\_easy\_init()}.  In fact, you don't need a new handle at all.
+    \end{itemize}
   \end{changemargin}
 
 \end{frame}
@@ -353,7 +361,9 @@ Upon return from {\tt epoll\_wait}, we have {\tt nr\_events} events ready.
 
   \begin{changemargin}{2cm}
     Call {\tt curl\_multi\_cleanup} on the multi handle.\\[1em]
-    Then, call {\tt curl\_easy\_cleanup} on each easy handle.
+    Then, call {\tt curl\_easy\_cleanup} on each easy handle.\\[2em]
+    If you replace {\tt curl\_easy\_init} by {\tt curl\_global\_init},\\
+    then call {\tt curl\_global\_cleanup} also.
   \end{changemargin}
 
 \end{frame}
@@ -382,7 +392,20 @@ Upon return from {\tt epoll\_wait}, we have {\tt nr\_events} events ready.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}
-  \frametitle{curl\_multi, option 2: curl\_multi\_socket\_action}
+  \frametitle{A better choice: curl\_multi\_wait}
+
+  \begin{changemargin}{1.5cm}
+    Instead of using {\tt select()}, \\
+    you can use {\tt curl\_multi\_wait()}.\\[2em]
+    It's just better.\\
+  \url{https://gist.github.com/clemensg/4960504}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{curl\_multi, option 3: curl\_multi\_socket\_action}
 
   \begin{changemargin}{1.5cm}
     So, I couldn't quite figure out how this works. Sorry.\\[1em]

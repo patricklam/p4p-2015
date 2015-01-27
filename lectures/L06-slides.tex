@@ -370,21 +370,4 @@ $\cdots$\\[2em]
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}
-  \frametitle{Using {\tt epoll}}
-  \begin{changemargin}{2em}
-    Key idea: give {\tt epoll} a bunch of file descriptors;\\
-     \hspace*{2em}wait for events to happen.\\[1em]
-
-     Steps:
-     \begin{enumerate}
-       \item create an instance ({\tt epoll\_create1});
-       \item populate it with file descriptors ({\tt epoll\_ctl});
-       \item wait for events ({\tt epoll\_wait}).
-     \end{enumerate}
-  \end{changemargin}
-\end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 \end{document}

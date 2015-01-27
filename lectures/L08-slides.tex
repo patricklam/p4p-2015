@@ -52,17 +52,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}
-  \frametitle{curl\_multi\_wait}
-
-  \begin{changemargin}{2.5cm}
-    example: \url{https://gist.github.com/clemensg/4960504}
-  \end{changemargin}
-
-\end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \part{Race Conditions}
 \frame{\partpage}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -204,7 +193,7 @@ D.2 = D.1 + 1;                D.2 = D.1 + 2
   \begin{itemize}
     \item Let's call the read and write from {\tt run1} R1 and W1; R2 and W2
       from {\tt run2}.
-    \item Assuming a sane\footnote{sequentially consistent} memory model, $R_n$ must precede $W_n$.
+    \item Assuming a sane\footnote{sequentially consistent} memory model, $R_n$ must precede $W_n$. \alert{C/C++ don't guarantee that model.}
   \end{itemize}
   \vfill
   All possible orderings:
@@ -220,6 +209,7 @@ R2 & R1 & W2 & W1 & 2 \\
 R2 & R1 & W1 & W2 & 3 \\
     \end{tabular}
   \end{center}
+  \alert{WARNING: see the provisos in the written notes!}
   \end{changemargin}
 
 \end{frame}
@@ -382,7 +372,7 @@ pthread_mutex_unlock(&m1);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}[fragile]
-  \frametitle{Using Mutexes: Pthreads Example}
+  \frametitle{Using Mutexes: C++11 Threads Example}
 
 \begin{changemargin}{1.5cm}
   \begin{lstlisting}
