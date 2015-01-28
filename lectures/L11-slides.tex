@@ -263,4 +263,101 @@ z = x + 40
 \end{center}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\part{Loop-carried Dependencies}
+\frame{\partpage}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Loop-carried Dependencies (1)}
+\begin{changemargin}{2.5cm}
+Can we run these lines in parallel? \\ ~~~(initially a[0] and a[1] are 1)
+\begin{lstlisting}
+a[4] = a[0] + 1
+a[5] = a[1] + 2
+\end{lstlisting}
+\pause
+\structure{Yes.}\\[1em]
+\begin{itemize}
+\item There are no dependencies between these lines.
+\item However, this is not how we normally use arrays\ldots
+\end{itemize}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Loop-carried Dependencies (2)}
+\begin{changemargin}{2.5cm}
+What about this? (all elements initially 1)
+\begin{lstlisting}
+for (int i = 1; i < 12; ++i)
+    a[i] = a[i-1] + 1
+\end{lstlisting}
+\pause
+\alert{No, a[2] = 3 or a[2] = 2.}\\[1em]
+\begin{itemize}
+\item Statements depend on previous loop iterations.
+\item An example of a \structure{loop-carried dependency}.
+\end{itemize}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Loop-carried Dependencies (3)}
+\begin{changemargin}{2.5cm}
+Can we parallelize this? (again, all elements initially 1)
+\begin{lstlisting}
+for (int i = 4; i < 12; ++i)
+    a[i] = a[i-4] + 1
+\end{lstlisting}
+\pause
+\structure{Yes, to a degree.}\\[1em]
+\begin{itemize}
+\item We can execute 4 statements in parallel:
+\begin{itemize}
+  \item a[4] = a[0] + 1, a[8] = a[4] + 1
+  \item a[5] = a[1] + 1, a[9] = a[5] + 1
+  \item a[6] = a[2] + 1, a[10] = a[6] + 1
+  \item a[7] = a[3] + 1, a[11] = a[7] + 1
+\end{itemize}  
+\end{itemize}
+
+\pause
+\structure{Always consider dependencies between iterations.}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+\frametitle{Larger example: Loop-carried Dependencies}
+{\small \begin{verbatim}
+  // Repeatedly square input, return number of iterations before 
+  // absolute value exceeds 4, or 1000, whichever is smaller.
+  int inMandelbrot(double x0, double y0) {
+    int iterations = 0;
+    double x = x0, y = y0, x2 = x*x, y2 = y*y;
+    while ((x2+y2 < 4) && (iterations < 1000)) {
+      y = 2*x*y + y0;
+      x = x2 - y2 + x0;
+      x2 = x*x; y2 = y*y;
+      iterations++;
+    }
+    return iterations;
+  }
+\end{verbatim} 
+}
+How can we parallelize this? \\
+\pause
+\begin{itemize}
+\item Run {\tt inMandelbrot} sequentially for each point, but parallelize
+different point computations.
+\end{itemize}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \end{document}
