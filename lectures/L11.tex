@@ -85,8 +85,19 @@ Reference:
 \url{http://stackoverflow.com/questions/1130018/unix-portable-atomic-operations}
 
 \section*{Dependencies}
-I've said that some computations appear to be ``inherently sequential''.
-Here's why.
+I've said that some computations appear to be ``inherently sequential''. We talked about a
+bunch of real-life analogies:
+
+\begin{itemize}
+\item must extract bicycle from garage before closing garage door
+ 
+\item must close washing machine door before starting the cycle
+ 
+\item must be called on before answering questions? (sort of)
+ 
+\item students must submit assignment before course staff can mark the assignment
+\end{itemize}
+
 
 Note that, in this lecture, we are going to assume that memory accesses follow the
 sequentially consistent memory model. For instance, if you declared all variables
