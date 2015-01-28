@@ -1,0 +1,374 @@
+\documentclass[aspectratio=43,11pt]{beamer}
+
+\usetheme{Boadilla}
+\setbeamertemplate{footline}[page number]{}
+\setbeamertemplate{navigation symbols}{}
+
+\usepackage{times}
+\usepackage{tikz}
+\usefonttheme{structurebold}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{url}
+
+\definecolor{commgreen}{rgb}{0,0.6,0}
+% Suppress the navigation bar
+\beamertemplatenavigationsymbolsempty
+
+\lstset{language=C++,
+        basicstyle=\ttfamily\tiny,
+        keywordstyle=\color{blue},
+        stringstyle=\color{red},
+        commentstyle=\color{green},
+        morecomment=[l][\color{magenta}]{\#},
+        breaklines=true
+}
+
+\newenvironment{changemargin}[1]{% 
+  \begin{list}{}{% 
+    \setlength{\topsep}{0pt}% 
+    \setlength{\leftmargin}{#1}% 
+    \setlength{\rightmargin}{1em}
+    \setlength{\listparindent}{\parindent}% 
+    \setlength{\itemindent}{\parindent}% 
+    \setlength{\parsep}{\parskip}% 
+  }% 
+  \item[]}{\end{list}} 
+
+\title{Tutorial 01 -- POSIX Threads}
+\subtitle{ECE 459: Programming for Performance}
+\author{Saeed Nejati \\ \href{mailto:snejati@uwaterloo.ca}{snejati@uwaterloo.ca}}
+\institute{University of Waterloo}
+\date{January 23, 2015}
+
+\begin{document}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Quick Reference}
+  
+  \begin{itemize}
+    \item \textbf{API header:} {\tt \#include <pthread.h>}
+    \item \textbf{Compiling:} {\tt gcc -pthread source.c -o exec}
+    \item \textbf{Main functions:}
+    \begin{itemize}
+      \item \textbf{Creating threads:} {\tt pthread\_create}
+      \item \textbf{Waiting for another thread to finish:} {\tt pthread\_join}
+      \item \textbf{Exiting a thread:} {\tt pthread\_exit}
+      \item \textbf{Initializing a Mutex: } {\tt pthread\_mutex\_init}
+      \item \textbf{Locking a Mutex:} {\tt pthread\_mutex\_lock}
+      \item \textbf{Unlocking a Mutex:} {\tt pthread\_mutex\_unlock}
+    \end{itemize}
+  \end{itemize}
+  \begin{lstlisting}
+  int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
+                     void *(*start_routine) (void *), void *arg);
+  int pthread_join(pthread_t thread, void **retval);
+  void pthread_exit(void *retval);
+  int pthread_mutex_init(pthread_mutex_t *mutex,
+                         const pthread_mutexattr_t *mutexattr);
+  int pthread_mutex_lock(pthread_mutex_t *mutex);
+  int pthread_mutex_unlock(pthread_mutex_t *mutex);
+  \end{lstlisting}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{An example use of Pthread}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \sectionpage
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{An example: Computing Sum of $\phi(n)$}
+  
+  \begin{itemize}
+    \item \textbf{Task:} Compute the sum of $\phi$ of numbers in a given range [$l$, $h$]
+    \item $\phi$ is the euler's totient function
+    \item We use a naive implementation for $\phi$ and don't care about optimizing the function itself
+  \end{itemize}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Sum of $\phi(n)$, version 1}
+  
+  \begin{itemize}
+    \item This is a simple serial implementation of the task.
+    \item We considered the range to be [2, 30000]
+  \end{itemize}
+  
+  \begin{changemargin}{0.5cm}
+  \lstinputlisting{codes/serial.cpp}
+  \end{changemargin}
+  \let\thefootnote\relax\footnotetext{Complete code can be found in {\it codes/serial.cpp}}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\begin{frame}
+%\lstinputlisting[firstline=22, lastline=54]{prime_sum/para1.cpp}
+%\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Sum of $\phi(n)$, version 2}
+
+  \begin{enumerate}
+    \item Calculation of $\phi(n)$ for each $n$ could be done independent of each other (look into {\tt main})
+    \item Thus we can do it in parallel
+    \item We consider that we have a fixed number of threads (8).
+    \item Now we need to split the task and send it to threads
+  \end{enumerate}  
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Sum of $\phi(n)$, version 2}
+  
+  \begin{itemize}
+    \item Let's split the interval into equal sized sub-intervals
+    \item Thread routines accept one argument, so we represent a sub-interval as a
+    pair object: [first, second]
+  \end{itemize}
+  
+  \lstinputlisting[firstline=32, lastline=56]{codes/parallel1.cpp}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Sum of $\phi(n)$, version 2}
+  
+  \begin{itemize}
+    \item We should sum up the results and because all threads are going to update this
+    sum variable, we need to protect it as well
+    \item Consider these two variables are in a scope that are accessible by all threads
+    \lstinputlisting[firstline=6, lastline=7]{codes/parallel1.cpp}
+    \item and before starting threads, we initialize these two like this:
+    \lstinputlisting[firstline=58, lastline=59]{codes/parallel1.cpp}
+    \item Now we can fire up our threads and wait for all of them to complete their tasks
+    \lstinputlisting[firstline=61, lastline=66]{codes/parallel1.cpp}
+  \end{itemize}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Sum of $\phi(n)$, version 2}
+  
+  \begin{itemize}
+    \item At last, our {\tt threadRoutine} would be something like this:
+    \lstinputlisting[firstline=20, lastline=30]{codes/parallel1.cpp}
+    \item \textbf{Note:} we cast the {\tt void*} pointer to argument to the appropriate
+    type and then reference it to get the value of the job we need to work on
+  \end{itemize}
+  
+  \let\thefootnote\relax\footnotetext{Complete code can be found in {\it codes/parallel1.cpp}}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Quick Reminder}
+  
+  UNIX {\tt time} command: {\tt time [options] command [arguments...]}
+  \begin{itemize}
+    \item \textbf{real:} The elapsed real time between invocation and termination of process
+    \item \textbf{user:} The user CPU time
+    \item \textbf{sys:} The system CPU time (the time spent in system calls on behalf of process)
+  \end{itemize}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Execution Results}
+
+  The results of running these two versions on a machine with
+  Intel Core i7 CPU, 16M ram was:
+  \begin{columns}
+  \column{.5\textwidth}
+  \begin{itemize}
+    \item Version 1: \\
+    {\tt real 0m38.191s \\
+         user 0m38.180s \\
+         sys  0m0.002s}  
+  \end{itemize}
+  \column{.5\textwidth}
+  \begin{itemize}
+    \item Version 2: \\
+    {\tt real 0m38.214s \\
+         user 0m38.708s \\
+         sys  0m0.075s}  
+  \end{itemize}
+  \end{columns}
+  \vfill
+  But why the parallel version didn't make any improvements?  
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Sum of $\phi(n)$, version 2, look-back}
+
+  \begin{itemize}
+    \item<1-> Take a look at this part of code (in {\tt threadRoutine} function):
+    \lstinputlisting[firstline=24, lastline=28]{codes/parallel1.cpp}
+    
+    \item<2-> We are protecting the {\tt sum} variable, which is a correct thing to do
+    \item<3-> BUT, we are locking the main heavy computation part in the critical section
+    \item<4-> No two threads go into Critical sections at the same time
+    \item<5-> Therefore Critical sections are executed in a serial fashion
+    \item<6-> Our parallel version is no better than a serial code + thread creation and mutex handling overhead!
+    (look at the difference in {\tt sys} time again)
+  \end{itemize}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Sum of $\phi(n)$, version 2.1}
+  
+  \begin{itemize}
+    \item \textbf{TIP:} Do as much as possible with your thread local data, then publish your results
+    to global scope
+    \item A fix to previous version could be:
+    \lstinputlisting[firstline=20, lastline=33]{codes/parallel2.cpp}
+  \end{itemize}
+  \let\thefootnote\relax\footnotetext{The updated code can be found in {\it codes/parallel2.cpp}}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Execution Results, again}
+
+  \begin{columns}
+  \column{.3\textwidth}
+  \begin{itemize}
+    \item Version 1: \\
+    \fontsize{8pt}{7.2}\selectfont{\tt real 0m38.191s \\
+         user 0m38.180s \\
+         sys  0m0.002s}  
+  \end{itemize}
+  \column{.3\textwidth}
+  \begin{itemize}
+    \item Version 2: \\
+    \fontsize{8pt}{7.2}\selectfont{\tt real 0m38.214s \\
+         user 0m38.708s \\
+         sys  0m0.075s}  
+  \end{itemize}
+  \column{.3\textwidth}
+  \begin{itemize}
+    \item Version 2.1: \\
+    \fontsize{8pt}{7.2}\selectfont{\tt real 0m9.975s \\
+           user 0m41.427s \\
+           sys  0m0.007s}
+  \end{itemize}
+  \end{columns}
+  \vfill
+  \begin{itemize}
+    \item<1-> The results seems much better, but the current speed up is about 3.8X (instead of close to ideal 8X).
+    \item<2-> The threads are not doing the same amount of job
+    \item<3-> Computing $\phi(n)$ takes more time as $n$ increases
+    \item<4-> The 8th thread is doing more computation than the others
+    \item<4-> It means that some threads are doing more than 1/8th of the total jobs
+    \item<5-> How to balance the job splitting?
+    \begin{itemize}
+      \item Dependent on task
+      \item Very hard to determine
+    \end{itemize}
+    \item<6-> \textbf{An Option:} Break the jobs into smaller piece and when the threads finished
+    their job, let them pick another one (known as Dynamic Scheduling, we won't discuss it here).
+  \end{itemize}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Some performance notes}
+  
+  \begin{itemize}
+    \item \textbf{Lock granularity:} How "big" (coarse) or "small" (fine) are your mutexes?
+    \begin{itemize}
+      \item lock your whole structure or fields of a structure?
+      \item The more fine-grained, the more concurrency
+      \item but at the cost of more overhead and potential deadlocks
+    \end{itemize}
+    \item \textbf{Lock ordering:} Make sure your locks are always locked in an agreed order
+    \item \textbf{Lock frequency:} Are you locking too often? Reduce such occurrences to
+    exploit concurrency and reduce sync overhead
+    \item \textbf{Critical sections:} Take extra steps to minimize critical sections which
+    can be potentially large bottlenecks
+  \end{itemize}
+  
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Helgrind, A thread error detector}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \sectionpage
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{How to use it?}
+
+  \begin{itemize}
+    \item It is part of Valgrind tool set
+    \item You can invoke it like: {\tt valgrind --tool=helgrind your\_program [your\_program\_options]}
+    \item It is a tool for detecting synchronization errors in C, C++ and fortran (which use pthread)
+    \item It can detect:
+    \begin{itemize}
+      \item Misuses of pthread API
+      \item Potential deadlocks arising from lock ordering problems
+      \item Data races -- Accessing memory without adequate locking or synchronization
+    \end{itemize}
+  \end{itemize}
+
+\let\thefootnote\relax\footnotetext{For more information and complete reference, please refer to: \\ \url{http://valgrind.org/docs/manual/hg-manual.html}}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{A sample use}
+  
+  \begin{itemize}
+    \item Consider the following code, which has a data race on variable {\tt var}
+    \lstinputlisting{codes/race.cpp}
+    \item If you compile the code with debugging info, helgrind would be able to address line of code
+    with an error in it. \\
+    {\tt g++ -pthread -g race.cpp}
+  \end{itemize}
+  
+  \let\thefootnote\relax\footnotetext{The code is an example from Helgrind reference document and
+  can be found at {\it codes/race.cpp} too}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{A sample use}
+  
+  \begin{itemize}
+    \item Now, this is the result of running the code with Helgrind: {\tt valgrind --tool=helgrind ./a.out}
+    \item Helgrind reports two possible data races: one on read
+  \end{itemize}
+
+\fontsize{6pt}{7.2}\selectfont\begin{verbatim}
+Possible data race during read of size 4 at 0x601050 by thread #1
+Locks held: none
+   at 0x4007C1: main (race.cpp:13)
+
+This conflicts with a previous write of size 4 by thread #2
+Locks held: none
+   at 0x400791: child_fn(void*) (race.cpp:6)
+   by 0x4A0A245: ??? (in /usr/lib64/valgrind/vgpreload_helgrind-amd64-linux.so)
+   by 0x3147407C64: start_thread (in /usr/lib64/libpthread-2.17.so)
+   by 0x3146CF5B9C: clone (in /usr/lib64/libc-2.17.so)
+\end{verbatim}    
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{A sample use}
+  
+  \begin{itemize}
+    \item and one on write
+    \item It refers to line 13 and line 6 of the code
+  \end{itemize}
+
+\fontsize{6pt}{7.2}\selectfont\begin{verbatim}
+Possible data race during write of size 4 at 0x601050 by thread #1
+Locks held: none
+   at 0x4007CA: main (race.cpp:13)
+
+This conflicts with a previous write of size 4 by thread #2
+Locks held: none
+   at 0x400791: child_fn(void*) (race.cpp:6)
+   by 0x4A0A245: ??? (in /usr/lib64/valgrind/vgpreload_helgrind-amd64-linux.so)
+   by 0x3147407C64: start_thread (in /usr/lib64/libpthread-2.17.so)
+   by 0x3146CF5B9C: clone (in /usr/lib64/libc-2.17.so)
+\end{verbatim}    
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\end{document}
