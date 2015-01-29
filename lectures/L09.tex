@@ -1,0 +1,313 @@
+\documentclass[11pt]{article}
+\usepackage{listings}
+\usepackage{tikz}
+\usepackage{url}
+\usepackage{hyperref}
+%\usepackage{algorithm2e}
+\usetikzlibrary{arrows,automata,shapes,positioning}
+\tikzstyle{block} = [rectangle, draw, fill=blue!20, 
+    text width=2.5em, text centered, rounded corners, minimum height=2em]
+\tikzstyle{bw} = [rectangle, draw, fill=blue!20, 
+    text width=3.5em, text centered, rounded corners, minimum height=2em]
+
+\newcommand{\handout}[5]{
+  \noindent
+  \begin{center}
+  \framebox{
+    \vbox{
+      \hbox to 5.78in { {\bf ECE459: Programming for Performance } \hfill #2 }
+      \vspace{4mm}
+      \hbox to 5.78in { {\Large \hfill #5  \hfill} }
+      \vspace{2mm}
+      \hbox to 5.78in { {\em #3 \hfill #4} }
+    }
+  }
+  \end{center}
+  \vspace*{4mm}
+}
+
+\lstset{basicstyle=\ttfamily \scriptsize}
+
+\newcommand{\lecture}[4]{\handout{#1}{#2}{#3}{#4}{Lecture #1}}
+\topmargin 0pt
+\advance \topmargin by -\headheight
+\advance \topmargin by -\headsep
+\textheight 8.9in
+\oddsidemargin 0pt
+\evensidemargin \oddsidemargin
+\marginparwidth 0.5in
+\textwidth 6.5in
+
+\parindent 0in
+\parskip 1.5ex
+%\renewcommand{\baselinestretch}{1.25}
+
+% http://gurmeet.net/2008/09/20/latex-tips-n-tricks-for-conference-papers/
+\newcommand{\squishlist}{
+ \begin{list}{$\bullet$}
+  { \setlength{\itemsep}{0pt}
+     \setlength{\parsep}{3pt}
+     \setlength{\topsep}{3pt}
+     \setlength{\partopsep}{0pt}
+     \setlength{\leftmargin}{1.5em}
+     \setlength{\labelwidth}{1em}
+     \setlength{\labelsep}{0.5em} } }
+\newcommand{\squishlisttwo}{
+ \begin{list}{$\bullet$}
+  { \setlength{\itemsep}{0pt}
+     \setlength{\parsep}{0pt}
+    \setlength{\topsep}{0pt}
+    \setlength{\partopsep}{0pt}
+    \setlength{\leftmargin}{2em}
+    \setlength{\labelwidth}{1.5em}
+    \setlength{\labelsep}{0.5em} } }
+\newcommand{\squishend}{
+  \end{list}  }
+
+\begin{document}
+
+\lecture{9 --- January 23, 2015}{Winter 2015}{Patrick Lam}{version 1}
+\section*{More synchronization primitives}
+
+We'll proceed in order of complexity.
+
+\paragraph{Recap: Mutexes.} Recall that our goal in this course is
+to be able to use mutexes correctly. You should have seen how to 
+implement them in an operating systems course. Here's how to use them.
+
+\begin{itemize}
+\item Call {\tt lock} on mutex $\ell_1$. Upon return from
+      {\tt lock}, your thread has exclusive access to $\ell_1$ until it
+      {\tt unlock}s it.
+\item Other calls to {\tt lock} $\ell_1$ will not return
+      until {\tt m1} is available.
+\end{itemize}
+
+ For background on implementing mutual exclusion, see
+ \href{http://en.wikipedia.org/wiki/Lamport\%27s_bakery_algorithm}
+      {Lamport's bakery algorithm}. Implementation details are not in
+      scope for this course.
+
+Key idea: locks protect resources; only one thread
+can hold a lock at a time. A second thread trying to obtain the lock
+(i.e. \emph{contending} for the lock) has to wait, or \emph{block},
+until the first thread releases the lock. So only one thread has
+access to the protected resource at a time. The code between the lock
+acquisition and release is known as the \emph{critical region}.
+
+Some mutex implementations also provide a ``try-lock'' primitive,
+which grabs the lock if it's available, or returns control to the
+thread if it's not, thus enabling the thread to do something else. (Kind of
+like non-blocking I/O!)
+
+Excessive use of locks can serialize programs. Consider two resources
+$A$ and $B$ protected by a single lock $\ell$. Then a thread that's
+just interested in $B$ still has acquire $\ell$, which requires it to
+wait for any other thread working with $A$. (The Linux kernel used to
+rely on a Big Kernel Lock protecting lots of resources in the 2.0 era,
+and Linux 2.2 improved performance on SMPs by cutting down on the use
+of the BKL.)
+
+Note: in Windows, the term ``mutex'' refers to an inter-process
+communication mechanism. ``Critical sections'' are the mutexes we're
+talking about above.
+
+\paragraph{Spinlocks.} Spinlocks are a variant of mutexes, where the
+waiting thread repeatedly tries to acquire the lock instead of sleeping.
+Use spinlocks when you expect critical sections to finish 
+quickly\footnote{For more information on spinlocks in the Linux
+kernel, see \url{http://lkml.org/lkml/2003/6/14/146}.}. Spinning
+for a long time consumes lots of CPU resources. Many lock
+implementations use both sleeping and spinlocks: spin for a bit,
+then sleep for longer. At some point, we saw a live coding example
+comparing spinlocks to normal mutexes.
+
+\paragraph{Reader/Writer Locks.} Recall that data races only happen when
+one of the concurrent accesses is a write. So, if you have read-only
+(``immutable'') data, as often occurs in functional programs, you don't need
+to protect access to that data. For instance, your program might
+have an initialization phase, where you write some data, and then a 
+query phase, where you use multiple threads to read the data.
+
+Unfortunately, sometimes your data is not read-only. It might, for instance,
+be rarely updated. Locking the data every time would be inefficient.
+The answer is to instead use a \emph{reader/writer} lock. Multiple
+threads can hold the lock in read mode, but only one thread can hold the
+lock in write mode, and it will block until all the readers are done 
+reading.
+
+\begin{verbatim}
+  int readData(int c1, int c2) {              // glib usage example
+    g_static_rw_lock_reader_lock (&rwlock);
+    int result = data[c1] + data[c2];
+    g_static_rw_lock_reader_unlock (&rwlock);
+  }
+
+  void writeData(int c1, int c2, int value) {
+    g_static_rw_lock_writer_lock (&rwlock);
+    data[c1] += value; data[c2] -= value;
+    g_static_rw_lock_writer_unlock (&rwlock);
+  }
+\end{verbatim}
+
+\paragraph{Semaphores/condition variables.} 
+While semaphores can keep track of a counter and can implement
+mutexes, you should use them to support signalling between threads or
+processes.
+
+In pthreads, semaphores can also be used for inter-process communication,
+while condition variables are like Java's {\tt wait()}/{\tt notify()}.
+
+\paragraph{Barriers.} This synchronization primitive allows you 
+to make sure that a collection of threads all reach the
+barrier before finishing. In pthreads, each thread should call
+\verb+pthread_barrier_wait()+, which will proceed when enough threads
+have reached the barrier. Enough means a number you specify upon
+barrier creation.
+
+\paragraph{Lock-Free Code.} We'll talk more about this in a few weeks.
+Modern CPUs support atomic operations, such as compare-and-swap, which
+enable experts to write lock-free code. A recent research 
+result~\cite{mckenney11:_concur,Attiya:2011:LOE:1926385.1926442} states the requirements for correct implementations: basically,
+such implementations must contain certain synchronization constructs.
+
+\section*{Semaphores}
+As you learned in previous courses, semaphores have a {\tt value} and
+can be used for signalling between threads. When you create a semaphore,
+you specify an initial value for that semaphore. Here's how they work.
+
+\begin{itemize}
+\item The {\tt value} can be understood to represent the number of resources available.
+\item A semaphore has two fundamental operations: {\tt wait} and 
+{\tt post}.
+\item {\tt wait} reserves one instance of the protected resource, if currently
+available---that is, if {\tt value} is currently above 0. If {\tt value} 
+is 0, then {\tt wait} suspends the thread until some other thread makes
+the resource available.
+\item {\tt post} releases one instance of the protected resource,
+incrementing {\tt value}.
+\end{itemize}
+
+\paragraph{Semaphore Usage.} Here are the relevant API calls.
+  \begin{lstlisting}
+#include <semaphore.h>
+
+int sem_init(sem_t *sem, int pshared, unsigned int value);
+int sem_destroy(sem_t *sem);
+int sem_post(sem_t *sem);
+int sem_wait(sem_t *sem);
+int sem_trywait(sem_t *sem);
+  \end{lstlisting}
+
+This API is a lot like the mutex API:
+  \begin{itemize}
+    \item must link with {\tt -pthread} (or {\tt -lrt} on Solaris);
+    \item all functions return {\tt 0} on success;
+    \item same usage as mutexes in terms of passing pointers.
+  \end{itemize}
+
+\noindent
+How could you use a {\tt semaphore} as a {\tt mutex}?
+\vspace*{3em}
+
+% If the initial {\tt value} is 1 and you use {\tt wait} to lock
+% and {\tt post} to unlock, it's equivalent to a {\tt mutex}
+
+\paragraph{Semaphores for Signalling.}
+Here's an example from the book. How would you make this always print
+``Thread 1'' then ``Thread 2'' using semaphores?
+
+\begin{lstlisting}
+#include <pthread.h>
+#include <stdio.h>
+#include <semaphore.h>
+#include <stdlib.h>
+
+void* p1 (void* arg) { printf("Thread 1\n"); }
+
+void* p2 (void* arg) { printf("Thread 2\n"); }
+
+int main(int argc, char *argv[])
+{
+    pthread_t thread[2];
+    pthread_create(&thread[0], NULL, p1, NULL);
+    pthread_create(&thread[1], NULL, p2, NULL);
+    pthread_join(thread[0], NULL);
+    pthread_join(thread[1], NULL);
+    return EXIT_SUCCESS;
+}
+\end{lstlisting}
+
+\paragraph{Proposed Solution.} Is it actually correct?
+
+\begin{lstlisting}
+sem_t sem;
+void* p1 (void* arg) {
+  printf("Thread 1\n");
+  sem_post(&sem);
+}
+void* p2 (void* arg) {
+  sem_wait(&sem);
+  printf("Thread 2\n");
+}
+
+int main(int argc, char *argv[])
+{
+    pthread_t thread[2];
+    sem_init(&sem, 0, /* value: */ 1);
+    pthread_create(&thread[0], NULL, p1, NULL);
+    pthread_create(&thread[1], NULL, p2, NULL);
+    pthread_join(thread[0], NULL);
+    pthread_join(thread[1], NULL);
+    sem_destroy(&sem);
+}
+\end{lstlisting}
+
+Well, let's reason through it.  
+  \begin{itemize}
+    \item {\tt value} is initially 1.
+    \item Say {\tt p2} hits its {\tt sem\_wait} first and succeeds.
+    \item {\tt value} is now 0 and {\tt p2} prints ``Thread 2'' first.
+    \item It would be OK if {\tt p1} happened first. That would just increase
+      {\tt value} to 2.
+    \end{itemize}
+
+Fix: set the initial {\tt value} to 0. Then, if {\tt p2} hits
+its {\tt sem\_wait} first, it will not print until {\tt p1} posts, which is after 
+{\tt p1} prints ``Thread 1''.
+
+
+\subsection*{The {\tt volatile} qualifier}
+We'll continue by discussing C language features and how they affect
+the compiler. The {\tt volatile} qualifier notifies the compiler that
+a variable may be changed by ``external forces''. It therefore ensures
+that the compiled code does an actual read from a variable every time
+a read appears (i.e. the compiler can't optimize away the read). It
+does not prevent re-ordering nor does it protect against races.
+
+Here's an example.
+  \begin{lstlisting}
+int i = 0;
+
+while (i != 255) { ... }
+  \end{lstlisting}
+\newpage
+
+{\tt volatile} prevents this from being optimized to:
+
+  \begin{lstlisting}
+int i = 0;
+
+while (true) { ... }
+  \end{lstlisting}
+
+Note that the variable will not actually be {\tt volatile} in the
+critical section; most of the time, it only prevents useful
+optimizations. {\tt volatile} is usually wrong unless there is a
+\emph{very} good reason for it.
+
+\bibliographystyle{alpha}
+\bibliography{L09}
+\end{document}
+
+
