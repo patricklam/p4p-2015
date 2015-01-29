@@ -34,7 +34,7 @@
   }% 
   \item[]}{\end{list}} 
 
-\title{Lecture 12---Loop-carried Dependencies; Speculation}
+\title{Lecture 12---Loop-carried Dependencies; Speculation; Parallelization Patterns}
 \subtitle{ECE 459: Programming for Performance}
 \date{January 30, 2015}
 
@@ -293,5 +293,180 @@ void doWork(int x, int y) {
   \end{changemargin}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+  \part{Parallelization Patterns}
+\frame{\partpage}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Critical Paths}
+
+  \begin{changemargin}{2.5cm}
+
+  Should be familiar with critcal paths from other courses (Gantt charts).\\[1em]
+
+  Consider the following diagram (edges are tasks):
+
+\begin{center}
+\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,column sep=2.2cm,
+                    semithick,initial text=]
+  \node[initial,block] (s0) {Start};
+  \node[block] (s1) [right=of s0] {S1};
+  \node[block] (s2) [right=of s1] {S2};
+  \node[bw] (s3) [right=of s2] {Finish};
+
+  \path (s0) edge node {A} (s1)
+        (s1) edge node {B} (s2)
+        (s2) edge node {D} (s3)
+        (s0) edge[bend left=30] node {C} (s2);
+\end{tikzpicture}
+\end{center}
+
+  \begin{itemize}
+    \item B depends on A, C has no dependencies, and D depends on B and C.
+    \item Can execute A-then-B in parallel with C.
+    \item Keep dependencies in mind when calculating speedups for more
+      complex programs.
+  \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Data and Task Parallelism}
+
+  \begin{changemargin}{2.5cm}
+     \structure{Data parallelism} is performing \emph{the same} operations on
+      different input.\\
+
+     {\bf Example:} doubling all elements of an array.\\[1em]
+
+     \structure{Task parallelism} is performing \emph{different} operations
+      on different input.
+
+    {\bf Example:} playing a video file: one thread decompresses
+      frames, another renders.
+
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Data Parallelism: Single Instruction, Multiple Data}
+
+  \begin{changemargin}{2cm}
+    We'll discuss SIMD in more detail later. An overview:
+    \begin{itemize}
+    \item You can load a bunch of data and perform 
+      arithmetic.
+    \item Intructions process multiple data items simultaneously.
+      (Exact number is hardware-dependent).
+    \end{itemize}
+    For x86-class CPUs, MMX and SSE extensions provide SIMD instructions.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{SIMD Example}
+
+  \begin{changemargin}{1.5cm}
+  Consider the following code:
+
+  \begin{lstlisting}
+void vadd(double * restrict a, double * restrict b, 
+          int count) {
+  for (int i = 0; i < count; i++)
+    a[i] += b[i];
+}    
+  \end{lstlisting}
+
+    In this scenario, we have a regular operation over block data.\\[1em]
+
+    We could use threads, but we'll use SIMD.
+
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{SIMD Example---Assembly without SIMD}
+
+  \begin{changemargin}{1.5cm}
+If we compile this without SIMD instructions on a 32-bit x86, (flags {\tt -m32 -march=i386 -S}) we might get this:
+
+  \begin{lstlisting}
+loop:
+  fldl  (%edx)
+  faddl (%ecx)
+  fstpl (%edx)
+  addl  8, %edx
+  addl  8, %ecx
+  addl  1, %esi
+  cmp   %eax, %esi
+  jle   loop
+  \end{lstlisting}
+
+   Just loads, adds, writes and increments.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{SIMD Example---Assembly with SIMD}
+
+  \begin{changemargin}{1.5cm}
+ Instead, compiling to SIMD instructions\\ ({\tt -m32 -mfpmath=sse -march=prescott}) gives:
+
+  \begin{lstlisting}
+loop:
+  movupd (%edx),%xmm0
+  movupd (%ecx),%xmm1
+  addpd  %xmm1,%xmm0
+  movpd  %xmm0,(%edx)
+  addl   16,%edx
+  addl   16,%ecx
+  addl   2,%esi
+  cmp    %eax,%esi
+  jle    loop
+  \end{lstlisting}
+
+  \begin{itemize}
+    \item Now processing two elements at a time on the same core.
+    \item Also, no need for stack-based x87 code.
+  \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{SIMD Overview}
+
+  \begin{changemargin}{1cm}
+  \begin{itemize}
+    \item Operations \emph{packed}: operate on multiple data elements 
+      at~the~same~time.
+    \vfill
+    \item On modern 64-bit CPUs, SSE has 16 128-bit registers.
+    \vfill
+    \item Very good if your data can be \emph{vectorized} and performs math.
+    \vfill
+    \item Usual application: image/video processing.
+    \vfill
+    \item We'll see more SIMD as we get into GPU programming: GPUs excel
+       at these types of applications.
+  \end{itemize}
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 
 \end{document}
