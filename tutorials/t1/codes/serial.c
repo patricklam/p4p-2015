@@ -5,18 +5,19 @@ int gcd(int a, int b) {
 }
 
 int phi(int n) {
-    int r = 0;
-    for( int i=1; i<n; i++ )
+    int i, r = 0;
+    for( i=1; i<n; i++ )
         if ( gcd(n, i) == 1 ) r++;
     return r;
 }
 
 int main() {
+    int n;
     long long sum = 0;
     int low = 2;
     int high = 30000;
 
-    for( int n=low; n<=high; n++ )
+    for( n=low; n<=high; n++ )
         sum += phi(n);
 
     printf("%lld\n", sum);
