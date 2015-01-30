@@ -102,14 +102,10 @@
   \end{itemize}
   
   \begin{changemargin}{0.5cm}
-  \lstinputlisting{codes/serial.cpp}
+  \lstinputlisting{codes/serial.c}
   \end{changemargin}
-  \let\thefootnote\relax\footnotetext{Complete code can be found in {\it codes/serial.cpp}}
+  \let\thefootnote\relax\footnotetext{Complete code can be found in {\it codes/serial.c}}
 \end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%\begin{frame}
-%\lstinputlisting[firstline=22, lastline=54]{prime_sum/para1.cpp}
-%\end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}
   \frametitle{Sum of $\phi(n)$, version 2}
@@ -128,10 +124,10 @@
   \begin{itemize}
     \item Let's split the interval into equal sized sub-intervals
     \item Thread routines accept one argument, so we represent a sub-interval as a
-    pair object: [first, second]
+    pair structure: [first, last]
   \end{itemize}
-  
-  \lstinputlisting[firstline=32, lastline=56]{codes/parallel1.cpp}
+  \lstinputlisting[firstline=5, lastline=5]{codes/parallel1.c}
+  \lstinputlisting[firstline=36, lastline=58]{codes/parallel1.c}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}
@@ -141,11 +137,11 @@
     \item We should sum up the results and because all threads are going to update this
     sum variable, we need to protect it as well
     \item Consider these two variables are in a scope that are accessible by all threads
-    \lstinputlisting[firstline=6, lastline=7]{codes/parallel1.cpp}
+    \lstinputlisting[firstline=7, lastline=8]{codes/parallel1.c}
     \item and before starting threads, we initialize these two like this:
-    \lstinputlisting[firstline=58, lastline=59]{codes/parallel1.cpp}
+    \lstinputlisting[firstline=60, lastline=61]{codes/parallel1.c}
     \item Now we can fire up our threads and wait for all of them to complete their tasks
-    \lstinputlisting[firstline=61, lastline=66]{codes/parallel1.cpp}
+    \lstinputlisting[firstline=63, lastline=68]{codes/parallel1.c}
   \end{itemize}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -154,12 +150,12 @@
   
   \begin{itemize}
     \item At last, our {\tt threadRoutine} would be something like this:
-    \lstinputlisting[firstline=20, lastline=30]{codes/parallel1.cpp}
-    \item \textbf{Note:} we cast the {\tt void*} pointer to argument to the appropriate
+    \lstinputlisting[firstline=21, lastline=32]{codes/parallel1.c}
+    \item \textbf{Note:} we cast the {\tt void*} pointer to argument, to the appropriate
     type and then reference it to get the value of the job we need to work on
   \end{itemize}
   
-  \let\thefootnote\relax\footnotetext{Complete code can be found in {\it codes/parallel1.cpp}}
+  \let\thefootnote\relax\footnotetext{Complete code can be found in {\it codes/parallel1.c}}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}
@@ -202,14 +198,14 @@
   \frametitle{Sum of $\phi(n)$, version 2, look-back}
 
   \begin{itemize}
-    \item<1-> Take a look at this part of code (in {\tt threadRoutine} function):
-    \lstinputlisting[firstline=24, lastline=28]{codes/parallel1.cpp}
+    \item Take a look at this part of code (in {\tt threadRoutine} function):
+    \lstinputlisting[firstline=26, lastline=30]{codes/parallel1.c}
     
-    \item<2-> We are protecting the {\tt sum} variable, which is a correct thing to do
-    \item<3-> BUT, we are locking the main heavy computation part in the critical section
-    \item<4-> No two threads go into Critical sections at the same time
-    \item<5-> Therefore Critical sections are executed in a serial fashion
-    \item<6-> Our parallel version is no better than a serial code + thread creation and mutex handling overhead!
+    \item We are protecting the {\tt sum} variable, which is a correct thing to do
+    \item BUT, we are locking the main heavy computation part in the critical section
+    \item No two threads go into Critical sections at the same time
+    \item Therefore Critical sections are executed in a serial fashion
+    \item Our parallel version is no better than a serial code + thread creation and mutex handling overhead!
     (look at the difference in {\tt sys} time again)
   \end{itemize}
 \end{frame}
@@ -221,9 +217,36 @@
     \item \textbf{TIP:} Do as much as possible with your thread local data, then publish your results
     to global scope
     \item A fix to previous version could be:
-    \lstinputlisting[firstline=20, lastline=33]{codes/parallel2.cpp}
+    \lstinputlisting[firstline=21, lastline=34]{codes/parallel2.c}
   \end{itemize}
-  \let\thefootnote\relax\footnotetext{The updated code can be found in {\it codes/parallel2.cpp}}
+  \let\thefootnote\relax\footnotetext{The updated code can be found in {\it codes/parallel2.c}}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{C++11 Thread}
+
+  \begin{itemize}
+    \item Creating and starting threads in C++11 is easier.
+    \item You can have multiple arguments passed to the thread routine.
+    \item Thread definition would be like:
+    \lstinputlisting[firstline=32, lastline=32]{codes/parallel.cpp}
+    \item and mutex definition:
+    \lstinputlisting[firstline=7, lastline=7]{codes/parallel.cpp}
+    \item and the loop for starting threads:
+    \lstinputlisting[firstline=43, lastline=54]{codes/parallel.cpp}
+  \end{itemize}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{C++11 Thread}
+
+  \begin{itemize}
+    \item and finally the thread routine:
+    \lstinputlisting[firstline=20, lastline=29]{codes/parallel.cpp}
+    \item and you can compile it like this: \\
+    {\tt g++ -std=c++11 -pthread parallel.cpp -o exec}
+  \end{itemize}
+  \let\thefootnote\relax\footnotetext{Complete code can be found in {\it codes/parallel.cpp}}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}
@@ -254,17 +277,17 @@
   \end{columns}
   \vfill
   \begin{itemize}
-    \item<1-> The results seems much better, but the current speed up is about 3.8X (instead of close to ideal 8X).
-    \item<2-> The threads are not doing the same amount of job
-    \item<3-> Computing $\phi(n)$ takes more time as $n$ increases
-    \item<4-> The 8th thread is doing more computation than the others
-    \item<4-> It means that some threads are doing more than 1/8th of the total jobs
-    \item<5-> How to balance the job splitting?
+    \item The results seems much better, but the current speed up is about 3.8X (instead of close to ideal 8X).
+    \item The threads are not doing the same amount of job
+    \item Computing $\phi(n)$ takes more time as $n$ increases
+    \item The 8th thread is doing more computation than the others
+    \item It means that some threads are doing more than 1/8th of the total jobs
+    \item How to balance the job splitting?
     \begin{itemize}
       \item Dependent on task
       \item Very hard to determine
     \end{itemize}
-    \item<6-> \textbf{An Option:} Break the jobs into smaller piece and when the threads finished
+    \item \textbf{An Option:} Break the jobs into smaller piece and when the threads finished
     their job, let them pick another one (known as Dynamic Scheduling, we won't discuss it here).
   \end{itemize}
 \end{frame}
