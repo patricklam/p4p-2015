@@ -1,0 +1,40 @@
+Assignment 2 Marking Guidelines
+
+The general principle is that correct solutions earn full marks.
+However, it is your responsibility to demonstrate to the TA
+that your solution is correct. Well-designed, clean solutions 
+are therefore more likely to be recognized as correct. 
+
+Solutions that do not compile will earn at most 39% of the available
+marks for that part. Segfaulting or otherwise crashing solutions earn
+at most 49%.
+
+Part 1, Automatic Parallelization (40 marks):
+
+(20 marks for implementation) A correct solution must:
+ * preserve the behaviour (10 points); and
+ * enable additional parallelization (10 points).
+ 
+(20 marks for report) 16 marks for including the necessary information
+(describing the experiments and results, reasonably speculating about
+the cause, and explaining why you preserve behaviour); 4 marks for
+clarity of exposition.
+
+Part 2, Manual Parallelization (30 marks):
+
+(20 marks for implementation) A correct solution must:
+ * properly use OpenMP pragmas and minor code changes to parallelize the code (16 points).
+
+(10 marks for report) 7 marks for including speedup data and
+explaining why your parallelization helped. 3 marks for clarity.
+
+Part 3, OpenMP Tasks (30 marks):
+
+(20 marks for implementation) A correct solution must:
+ * properly use OpenMP tasks to get a speedup;
+ * be free of obvious race conditions.
+
+(10 marks for report) 7 marks for analyzing the performance
+of the provided version, describing the speedup due to your
+changes, explaining why your changes improved performance, and
+speculating reasonably about further changes. 3 marks for clarity.
