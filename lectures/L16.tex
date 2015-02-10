@@ -41,7 +41,7 @@
 
 \begin{document}
 
-\lecture{16 --- February 9, 2015}{Winter 2015}{Patrick Lam}{version 0}
+\lecture{16 --- February 9, 2015}{Winter 2015}{Patrick Lam}{version 1}
 
 Following Gove, we'll parallelize the following code:
 {\tiny
@@ -286,104 +286,6 @@ $ cc -O3 -xloopinfo -xautopar fploop2.c
 "fploop2.c", line 8: not parallelized, unsafe dependence
 \end{verbatim} 
 }
-
-There's still a dependence in the inner loop. This dependence is because
-all inner loop iterations write to the same location, {\tt out[i]}. We'll
-discuss that problem below.
-
-In any case, the outer loop is the one that can actually improve performance,
-since parallelizing it imposes much less barrier synchronization cost 
-waiting for all threads to finish. So, even if we tell the compiler to ignore
-the reduction issue, it will generally refuse to parallelize inner loops:
-{\small 
-\begin{verbatim}
-$ cc -g -O3 -xloopinfo -xautopar -xreduction fploop2.c 
-"fploop2.c", line 5: PARALLELIZED, and serial version generated
-"fploop2.c", line 8: not parallelized, not profitable
-\end{verbatim} 
-}
-
-\paragraph{Summary of conditions for automatic parallelization.} Here's what I 
-can figure out; you may also refer to Chapter 3 of the Solaris Studio
-\emph{C User's Guide}, but it doesn't spell out the exact conditions
-either. To parallelize a loop, it must:
-\begin{itemize}
-\item have a recognized loop style, e.g. {\tt for} loops with
-bounds that don't vary per iteration;
-\item have no dependencies between data accessed in loop bodies for
-  each iteration;
-\item not conditionally change scalar variables read after the loop
-  terminates, or change any scalar variable across iterations;
-\item have enough work in the loop body to make parallelization profitable.
-\end{itemize}
-
-\paragraph{Reductions.} The concept behind a 
-reduction (as made ``famous'' in MapReduce, which we'll talk about
-later) is reducing a set of data to a smaller set which somehow
-summarizes the data. For us, reductions are going to reduce
-arrays to a single value. Consider, for instance, this function, which
-calculates the sum of an array of numbers:
-
-{\tiny
-\begin{lstlisting}[language=C,numbers=left]
-double sum (double *array, int length)
-{
-  double total = 0;
-
-  for (int i = 0; i < length; i++)
-    total += array[i];
-  return total;
-}
-\end{lstlisting}
-}
-
-There are two barriers: 1) the value of {\tt total} depends on what
-gets computed in previous iterations; and 2) addition is actually
-non-associative for floating-point values. ({\sf Why? When is it
-appropriate to parallelize non-associative operations?})
-
-Nevertheless, the Solaris C compiler will explicitly recognize
-some reductions and can parallelize them for you:
-
-{\small
-\begin{verbatim}
-$ cc -O3 -xautopar -xreduction -xloopinfo sum.c
-"sum.c", line 5: PARALLELIZED, reduction, and serial version generated
-\end{verbatim}
-}
-
-{\bf Note:}  If we try to do the reduction on {\tt fploop.c} with {\tt restrict}s added, we'll get the following:
-
-\begin{lstlisting}
-$ cc -O3 -xautopar -xloopinfo  -xreduction -c fploop.c
-"fploop.c", line 5: PARALLELIZED, and serial version generated
-"fploop.c", line 8: not parallelized, not profitable
-\end{lstlisting}
-
-\paragraph{Dealing with function calls.} Generally, function calls
-can have arbitrary side effects. Production compilers will usually
-avoid parallelizing loops with function calls; research compilers try
-to ensure that functions are pure and then parallelize them.
-(This is why functional languages are nice for parallel
-programming: impurity is visible in type signatures.)
-
-For builtin functions, like {\tt sin()}, you can promise to the 
-compiler that you didn't replace them with your own implementations
-({\tt -xbuiltin}), and then the compiler will parallelize the loop.
-
-Another option is to crank up the optimization level ({\tt -xO4}), or
-to explicitly tell the compiler to inline certain functions ({\tt
-  -xinline=}), thereby enabling parallelization. This doesn't work as
-well as one might hope; using macros will always work, but is less maintainable.
-
-\paragraph{Helping the compiler parallelize.} Let's summarize what we've
-seen. To help the compiler, we can use the {\tt restrict} qualifier on
-pointers (possibly copying a pointer to a {\tt restrict}-qualified
-pointer: {\tt int * restrict p = s->p;}); and, we can make sure that
-loop bounds don't change in the loop (e.g. by using temporary
-variables). Some compilers can automatically create different versions
-for the alias-free case and the (parallelized) aliased case; at
-runtime, the program runs the aliased case if the inputs permit.
 
 
 \end{document}

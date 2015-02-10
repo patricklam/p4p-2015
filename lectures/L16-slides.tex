@@ -54,7 +54,7 @@
     \begin{itemize}
     \item Past: manual parallelization with threads
     \item Now: compilers \& automatic parallelization (when)
-    \item Future: under the hood (how compilers parallelize))
+    \item Future: under the hood (how compilers parallelize)
     \end{itemize}
   \end{changemargin}
 \end{frame}
@@ -186,6 +186,79 @@ call    GOMP_parallel_end
   {\tt main.\_loopfn.3}, although it looks like it serves little purpose.
 \end{changemargin}
 
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Loops That gcc's Automatic Parallelization Can Handle}
+
+\begin{changemargin}{2.5cm}
+  Single loop:
+  \begin{lstlisting}
+for (i = 0; i < 1000; i++)
+    x[i] = i + 3;
+  \end{lstlisting}
+  \vfill
+  Nested loops with simple dependency:
+  \begin{lstlisting}
+for (i = 0; i < 100; i++)
+    for (j = 0; j < 100; j++)
+        X[i][j] = X[i][j] + Y[i-1][j];
+  \end{lstlisting}
+  \vfill
+  Single loop with not-very-simple dependency:
+  \begin{lstlisting}
+for (i = 0; i < 10; i++)
+    X[2*i+1] = X[2*i];
+  \end{lstlisting}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Loops That gcc's Automatic Parallelization Can't Handle}
+
+\begin{changemargin}{2.5cm}
+  Single loop with if statement:
+  \begin{lstlisting}
+for (j = 0; j <= 10; j++)
+    if (j > 5) X[i] = i + 3;
+  \end{lstlisting}
+  \vfill
+  Triangle loop:
+  \begin{lstlisting}
+for (i = 0; i < 100; i++)
+    for (j = i; j < 100; j++)
+        X[i][j] = 5;
+  \end{lstlisting}
+  \vfill
+  Examples from: \url{http://gcc.gnu.org/wiki/AutoparRelated}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Summary of Conditions for Automatic Parallelization}
+
+\begin{changemargin}{2.5cm}
+  From Chapter 10 of
+  Oracle's \emph{Fortran Programming Guide}
+  \footnote{\scriptsize \url{http://download.oracle.com/docs/cd/E19205-01/819-5262/index.html}}
+  translated to C, a loop must:
+
+  \begin{itemize}
+    \item have a recognized loop style, e.g., {\tt for} loops with
+      bounds that don't vary per-iteration;
+    \item have no dependencies between data accessed in loop bodies for
+      each iteration;
+    \item not conditionally change scalar variables read after the loop
+      terminates, or change any scalar variable across iterations; and
+    \item have enough work in the loop body to make parallelization profitable.
+  \end{itemize}
+\end{changemargin}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -372,78 +445,6 @@ void matVec (double **mat, double *vec, double *out,
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}[fragile]
-  \frametitle{Loops That gcc's Automatic Parallelization Can Handle}
-
-\begin{changemargin}{2.5cm}
-  Single loop:
-  \begin{lstlisting}
-for (i = 0; i < 1000; i++)
-    x[i] = i + 3;
-  \end{lstlisting}
-  \vfill
-  Nested loops with simple dependency:
-  \begin{lstlisting}
-for (i = 0; i < 100; i++)
-    for (j = 0; j < 100; j++)
-        X[i][j] = X[i][j] + Y[i-1][j];
-  \end{lstlisting}
-  \vfill
-  Single loop with not-very-simple dependency:
-  \begin{lstlisting}
-for (i = 0; i < 10; i++)
-    X[2*i+1] = X[2*i];
-  \end{lstlisting}
-\end{changemargin}
-\end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}[fragile]
-  \frametitle{Loops That gcc's Automatic Parallelization Can't Handle}
-
-\begin{changemargin}{2.5cm}
-  Single loop with if statement:
-  \begin{lstlisting}
-for (j = 0; j <= 10; j++)
-    if (j > 5) X[i] = i + 3;
-  \end{lstlisting}
-  \vfill
-  Triangle loop:
-  \begin{lstlisting}
-for (i = 0; i < 100; i++)
-    for (j = i; j < 100; j++)
-        X[i][j] = 5;
-  \end{lstlisting}
-  \vfill
-  Examples from: \url{http://gcc.gnu.org/wiki/AutoparRelated}
-\end{changemargin}
-\end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}
-  \frametitle{Summary of Conditions for Automatic Parallelization}
-
-\begin{changemargin}{2.5cm}
-  From Chapter 10 of
-  Oracle's \emph{Fortran Programming Guide}
-  \footnote{\scriptsize \url{http://download.oracle.com/docs/cd/E19205-01/819-5262/index.html}}
-  translated to C, a loop must:
-
-  \begin{itemize}
-    \item have a recognized loop style, e.g., {\tt for} loops with
-      bounds that don't vary per-iteration;
-    \item have no dependencies between data accessed in loop bodies for
-      each iteration;
-    \item not conditionally change scalar variables read after the loop
-      terminates, or change any scalar variable across iterations; and
-    \item have enough work in the loop body to make parallelization profitable.
-  \end{itemize}
-\end{changemargin}
-\end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}[fragile]
@@ -525,71 +526,6 @@ double sum (double *array, int length)
 "fploop.c", line 8: not parallelized, not profitable
   \end{lstlisting}
 
-\end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}
-  \frametitle{Dealing with Function Calls}
-
-\begin{changemargin}{1.5cm}  
-  \begin{itemize}
-    \item A general function could have arbitary side effects.
-    \item Production compilers tend to avoid parallelizing any loops with
-      function calls.
-  \end{itemize}
-~\\[1em]
-
-  Some built-in functions, like {\tt sin()}, are ``pure'', have no side
-  effects, and are safe to parallelize.
-~\\[1em]
-  {\bf Note:} this is why functional languages are nice for parallel
-  programming: impurity is visible in type signatures.
-\end{changemargin}
-\end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}
-  \frametitle{Dealing with Function Calls in {\tt solarisstudio}}
-
-\begin{changemargin}{1.5cm}  
-  \begin{itemize}
-    \item For {\tt solarisstudio} you can use the {\tt -xbuiltin} flag to make
-      the compiler use its whitelist of ``pure'' functions.
-    \item The compiler can then parallelize a loop which uses {\tt sin()}
-      (you shouldn't replace built-in functions with your own if you use this
-      option).
-  \end{itemize}
-  \vfill
-  Other options which may work:
-  
-  \begin{enumerate}
-    \item Crank up the optimization level ({\tt -xO4}).
-    \item Explicitly tell the compiler to inline certain functions ({\tt
-      -xinline=}, or use the {\tt inline} keyword).
-  \end{enumerate}
-\end{changemargin}
-\end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}
-  \frametitle{Summary of Automatic Parallelization}
-
-\begin{changemargin}{1.5cm}  
-To help the compiler, we can:
-\begin{itemize}
-\item use {\tt restrict} (make a {\tt restrict}ed copy); and,
-\item make sure that loop bounds are constant (temporary
-variables). 
-\end{itemize}
-~\\
-Some compilers automatically create different versions
-for the alias-free case and the (parallelized) aliased case.\\[1em]
-
-At runtime, the program runs the aliased case if correct.
-\end{changemargin}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \end{document}
