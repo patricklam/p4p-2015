@@ -1,0 +1,416 @@
+% 62 minutes
+
+\documentclass[11pt]{article}
+\usepackage{listings}
+\usepackage{tikz}
+\usepackage{url}
+%\usepackage{algorithm2e}
+\usetikzlibrary{arrows,automata,shapes,decorations.pathreplacing,positioning}
+\tikzstyle{block} = [rectangle, draw, fill=blue!20, 
+    text width=2.5em, text centered, rounded corners, minimum height=2em]
+\tikzstyle{bw} = [rectangle, draw, fill=blue!20, 
+    text width=3.5em, text centered, rounded corners, minimum height=2em]
+
+\newcommand{\handout}[5]{
+  \noindent
+  \begin{center}
+  \framebox{
+    \vbox{
+      \hbox to 5.78in { {\bf ECE459: Programming for Performance } \hfill #2 }
+      \vspace{4mm}
+      \hbox to 5.78in { {\Large \hfill #5  \hfill} }
+      \vspace{2mm}
+      \hbox to 5.78in { {\em #3 \hfill #4} }
+    }
+  }
+  \end{center}
+  \vspace*{4mm}
+}
+
+\newcommand{\lecture}[4]{\handout{#1}{#2}{#3}{#4}{Lecture #1}}
+\topmargin 0pt
+\advance \topmargin by -\headheight
+\advance \topmargin by -\headsep
+\textheight 8.9in
+\oddsidemargin 0pt
+\evensidemargin \oddsidemargin
+\marginparwidth 0.5in
+\textwidth 6.5in
+
+\parindent 0in
+\parskip 1.5ex
+%\renewcommand{\baselinestretch}{1.25}
+
+% http://gurmeet.net/2008/09/20/latex-tips-n-tricks-for-conference-papers/
+\newcommand{\squishlist}{
+ \begin{list}{$\bullet$}
+  { \setlength{\itemsep}{0pt}
+     \setlength{\parsep}{3pt}
+     \setlength{\topsep}{3pt}
+     \setlength{\partopsep}{0pt}
+     \setlength{\leftmargin}{1.5em}
+     \setlength{\labelwidth}{1em}
+     \setlength{\labelsep}{0.5em} } }
+\newcommand{\squishlisttwo}{
+ \begin{list}{$\bullet$}
+  { \setlength{\itemsep}{0pt}
+     \setlength{\parsep}{0pt}
+    \setlength{\topsep}{0pt}
+    \setlength{\partopsep}{0pt}
+    \setlength{\leftmargin}{2em}
+    \setlength{\labelwidth}{1.5em}
+    \setlength{\labelsep}{0.5em} } }
+\newcommand{\squishend}{
+  \end{list}  }
+
+\begin{document}
+
+\lecture{20 --- February 25, 2015}{Winter 2015}{Patrick Lam}{version 0}
+
+\section*{Memory Consistency, Memory Barriers, and Reordering}
+Today we'll talk a bit more about memory consistency, memory barriers
+and reordering in general. We'll start with instruction reordering by
+the CPU and move on to reordering initiated by the compiler.  I'll
+also touch on some CPU instructions for atomic operations.
+
+\paragraph{Memory Consistency.} In a sequential program, you expect
+things to happen in the order that you wrote them. So, consider this code,
+where variables are initialized to 0:
+
+\begin{center}
+\begin{verbatim}
+    T1: x = 1; r1 = y;
+    T2: y = 1; r2 = x;
+\end{verbatim}
+\end{center}
+We would expect that we would always query the memory and get a state
+where some subset of these partially-ordered statements would have executed.
+This is the \emph{sequentially consistent} memory model.
+
+\begin{quote}
+``... the result of any execution is the same as if the operations of all the processors were executed in some sequential order, and the operations of each individual processor appear in this sequence in the order specified by its program.'' --- Leslie Lamport
+\end{quote}
+
+{\sf What are the possible values for the variables?}\\[3em]
+
+Another view of sequential consistency:
+\squishlist
+      \item each thread induces an \emph{execution trace}.
+      \item always, the program has executed some prefix of each thread's
+        trace.
+\squishend
+
+
+It turns out that sequential consistency is too expensive to implement.
+(Why?) So most systems actually implement weaker memory models,
+such that both {\tt r1} and {\tt r2} might end up unchanged. Recall the 
+{\bf flush} example from last time.
+
+\paragraph{Reordering.} Compilers and processors may reorder 
+non-interfering memory operations within a thread. For instance, the
+two statements in {\tt T1} appear to be independent, so it's OK to
+execute them---or, equivalently, to publish their results to other
+threads---in either order. Reordering is one of the major tools that
+compilers use to speed up code.
+
+{\sf When is reordering a problem?}\\[2em]
+% spin locks, as we'll see below.
+
+\subsection*{Memory Consistency Models}
+
+Here are some flavours of memory consistency models:
+
+\squishlist
+\item Sequential consistency: no reordering of loads/stores.
+\item Sequential consistency for datarace-free programs: if your program
+  has no data races, then sequential consistency.
+\item Relaxed consistency (only some types of reorderings):
+\squishlist
+        \item Loads can be reordered after loads/stores; and
+        \item Stores can be reordered after loads/stores.
+\squishend
+\item     Weak consistency: any reordering is possible.
+\squishend
+
+In any case, {\bf reorderings} only allowed if they look safe in
+current context (i.e. they reorder independent memory addresses).
+That can still be problematic, though.
+
+\paragraph{Compilers and reordering.}
+When it can prove that a reordering is safe with respect to the
+programming language semantics, the {\bf compiler} may reorder instructions (so it's not just the hardware).
+
+For example, say we want thread 1 to print value set in thread 2.
+  \begin{lstlisting}
+                            f = 0
+
+/* thread 1 */                          /* thread 2 */
+while (f == 0) /* spin */;              x = 42;
+printf("%d", x);                        f = 1;
+  \end{lstlisting}
+
+If thread 2 reorders its instructions, will we get our intended
+result? \emph{No!}
+
+\subsection*{Memory Barriers} We previously talked about OpenMP barriers: 
+at a {\tt \#pragma omp barrier}, all threads pause, until all of the
+threads reach the barrier. Lots of OpenMP directives come with implicit barriers
+unless you add {\tt nowait}.
+
+A rather different type of barrier is a \emph{memory barrier} or
+\emph{fence}. This type of barrier prevents reordering, or,
+equivalently, ensures that memory operations become visible in the
+right order. A memory barrier ensures that no access occuring after
+the barrier becomes visible to the system, or takes effect, until
+after all accesses before the barrier become visible.
+
+\newpage
+The x86 architecture defines the following types of memory 
+barriers:
+
+\begin{itemize}
+\item {\tt mfence.} All loads and stores before the barrier become
+visible before any loads and stores after the barrier become visible.
+\item {\tt sfence.} All stores before the barrier become visible before
+all stores after the barrier become visible.
+\item {\tt lfence.} All loads before the barrier become visible before
+all loads after the barrier become visible.
+\end{itemize}
+
+Note, however, that while an {\tt sfence} makes the stores visible,
+another CPU will have to execute an {\tt lfence} or {\tt mfence} to
+read the stores in the right order.
+
+Consider the example again:
+  \begin{lstlisting}
+                         f = 0
+
+/* thread 1 */                     /* thread 2 */
+while (f == 0) /* spin */;         x = 42;
+// memory fence                    // memory fence
+printf("%d", x);                   f = 1;
+  \end{lstlisting}
+This now prevents reordering, and we get the expected result.
+
+You can use the {\tt mfence} instruction to implement \emph{acquire
+  barriers} and \emph{release barriers}.  An acquire barrier ensures
+that memory operations after a thread obtains the mutex doesn't become
+visible until after the thread actually obtains the mutex.
+The release barrier similarly ensures that accesses before the mutex
+release don't get reordered to after the mutex release. Note that
+it is safe to reorder accesses after the mutex release and put them
+before the release.
+
+\paragraph{Preventing Memory Reordering in Programs: Compiler Barriers.}
+First: Don't use volatile in C/C++ on variables~\footnote{\tiny \url{http://stackoverflow.com/questions/78172/using-c-pthreads-do-shared-variables-need-to-be-volatile}.}. However, you can prevent reordering using compiler-specific calls.
+
+\squishlist
+  \item Microsoft Visual Studio C++ Compiler:
+  \begin{lstlisting}
+_ReadWriteBarrier()
+  \end{lstlisting}
+  \item Intel Compiler:
+  \begin{lstlisting}
+    __memory_barrier()
+  \end{lstlisting}
+  \item GNU Compiler:
+  \begin{lstlisting}
+__asm__ __volatile__ ("" ::: "memory");
+  \end{lstlisting}
+\squishend
+
+The compiler also shouldn't reorder across e.g. Pthreads mutex calls.
+
+\paragraph{Aside: {\tt gcc} Inline Assembly.}
+Just as an aside, here's {\tt gcc}'s inline assembly format
+
+  \begin{lstlisting}
+__asm__ ( assembler template 
+       : output operands                  /* optional */
+       : input operands                   /* optional */
+       : list of clobbered registers      /* optional */
+       );
+  \end{lstlisting}
+
+Note that we've just seen {\bf \_\_volatile\_\_} with  \_\_asm\_\_. This isn't the same as the normal C volatile. It means:
+\squishlist
+    \item The compiler may not reorder this assembly code and put it somewhere
+      else in the program.
+\squishend
+
+\paragraph{Back to Memory Reordering in Programs.}
+    Fortunately, an OpenMP {\bf flush} (or, better yet, mutexes) also preserve the order of variable accesses.
+    Stops reordering from both the compiler and hardware.
+    For GNU, flush is implemented as
+      {\tt \_\_sync\_synchronize();}
+
+\paragraph{{\tt volatile}.} This qualifier ensures that the
+code does an actual read from a variable every time it asks for one
+(i.e. the compiler can't optimize away the read). It does not prevent
+re-ordering nor does it protect against races.
+
+{\bf Note:} proper use of memory fences makes {\tt volatile} not very
+useful (again, {\tt volatile} is not meant to help with threading, and
+will have a different behaviour for threading on different
+compilers/hardware).
+
+\section*{Atomic Operations}
+ We saw the {\bf atomic} directive in OpenMP as well as C++11 atomics. Most OpenMP atomic expressions map to atomic hardware instructions.
+However, other atomic instructions exist, and we've seen the C++11 ones earlier as well.
+
+\paragraph{Compare and Swap.} This operation is also called {\bf compare and exchange} (implemented by the {\tt cmpxchg} instruction on x86).
+Here's some pseudocode for it.
+  \begin{lstlisting}
+int compare_and_swap (int* reg, int oldval, int newval) 
+{
+  int old_reg_val = *reg;
+  if (old_reg_val == oldval) 
+     *reg = newval;
+  return old_reg_val;
+}
+  \end{lstlisting}
+
+Afterwards, you can check if the CAS returned {\tt oldval}. If it did, you know you changed it.
+
+\newpage
+\paragraph{Implementing a Spinlock.}
+You can use compare-and-swap to implement spinlock:
+  \begin{lstlisting}
+void spinlock_init(int* l) { *l = 0; }
+
+void spinlock_lock(int* l) {
+    while(compare_and_swap(l, 0, 1) != 0) {}
+    __asm__ ("mfence");
+}
+
+void spinlock_unlock(int* int) {
+    __asm__ ("mfence");
+    *l = 0;  
+}
+  \end{lstlisting}
+You'll see {\bf cmpxchg} quite frequently in the Linux kernel code.
+
+\section*{ABA Problem}
+Sometimes you'll read a location twice.
+If the value is the same both times, nothing has changed, right?\\[1em]
+
+\emph{No.} This is an {\bf ABA problem}.\\[1em]
+
+You can combat this by ``tagging'': modify value with nonce upon each
+write.  You can also keep the value separately from the nonce; double
+compare and swap atomically swaps both value and nonce.
+
+Just something to be aware of. ``Not on exam''.
+
+\section*{C/C++11 Memory Model}
+
+We have talked about memory models in the context of OpenMP. Let's
+talk about the core languages now---that is, C and C++\footnote{\url{http://www.quora.com/C++-programming-language/How-are-the-threading-and-memory-models-different-in-C++-as-compared-to-C}}\footnote{\url{http://rsim.cs.illinois.edu/Pubs/08PLDI.pdf}}---when
+not using OpenMP.
+
+What outputs are possible from this example?
+
+\begin{tabular}{ll}
+      \begin{minipage}{.2\textwidth}
+        Thread 1:
+        \begin{lstlisting}
+  foo = 7;
+  bar = 42;
+        \end{lstlisting}
+      \end{minipage} &
+      \begin{minipage}{.4\textwidth}
+        Thread 2:
+        \begin{lstlisting}
+  printf("%d\n", foo);
+  printf("%d\n", bar);
+        \end{lstlisting}
+      \end{minipage}
+\end{tabular}
+
+You might think ``undefined'', but actually it's worse than that. The 
+C11 and C++11 language definitions don't even say what a thread is.
+Of course, there is Pthreads, but that is a library, not the language itself.
+So you can't even ask this question when talking about pre-C11/C++11 versions
+of C and C++.
+
+C++11 (and C11) have improved the situation, though. There is actually
+a memory model (based on an abstract machine) and threading primitives
+such as mutexes, atomics, and memory barriers---the concepts that we
+have seen in this course.
+
+Now, we can ask the question about the behaviour of the above example.
+It does have undefined behaviour, since there is contended access to
+the variables {\tt foo} and {\tt bar}. How can we fix that?
+
+\paragraph{Atomics.}
+A good exam question: if {\tt foo} is atomic, what are the possible outputs? 
+    
+    \begin{tabular}{ll}
+      \begin{minipage}{.25\textwidth}
+        Thread 1:
+        \begin{lstlisting}
+  foo.store(7);
+  bar.store(42);
+        \end{lstlisting}
+      \end{minipage} &
+      \begin{minipage}{.45\textwidth}
+        Thread 2:
+        \begin{lstlisting}
+  printf("%d\n", foo.load());
+  printf("%d\n", bar.load());
+        \end{lstlisting}
+      \end{minipage}
+    \end{tabular}
+
+
+
+\section*{Good C++ Practice}
+Lots of people use postfix ({\tt i++}) out of habit, but prefix ({\tt ++i}) is better.
+
+In C, this isn't a problem. 
+In some languages (like C++), it can be.
+
+\paragraph{Why? Overloading.} In C++, you can overload the {\tt ++} and {\tt --} operators.
+
+  \begin{lstlisting}
+class X {
+public:
+  X& operator++();
+  const X operator++(int);
+...
+};
+
+X x;
+++x; // x.operator++();
+x++; // x.operator++(0);
+  \end{lstlisting}
+
+Prefix is also known as {\bf increment and fetch}, and might be implemented like this:
+  \begin{lstlisting}
+X& X::operator++()
+{
+  *this += 1;
+  return *this;
+}
+  \end{lstlisting}
+~\\[1em]
+
+  Postfix is also known as {\bf fetch and increment}. Note that you have to make a copy of
+the old value:
+  \begin{lstlisting}
+const X X::operator++(int)
+{
+  const X old = *this;
+  ++(*this);
+  return old;
+}
+  \end{lstlisting}
+
+So, if you're the least concerned about efficiency (and why else would you be
+taking programming for performance?), always use
+  \emph{prefix} increments/decrements instead of defaulting to postfix.
+
+Only use {\tt postfix} when you really mean it, to be on the safe side.
+
+
+\end{document}
