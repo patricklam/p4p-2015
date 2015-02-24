@@ -1,0 +1,171 @@
+\documentclass[12pt]{article}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{fullpage}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,calc,automata}
+
+\begin{document}
+
+\title{Programming for Performance (ECE459): Final}
+\author{}
+\renewcommand{\today}{}
+\maketitle
+
+ ~\\[-8em]
+
+\begin{center}
+{\Large April 25, 2013}
+\end{center}
+
+\noindent
+This open-book exam has 5 non-cover pages \& 6 questions, worth 25 points
+each. Answer in your answer book. You may consult any
+printed material (books, notes, etc).
+
+
+\section{Compiler Optimizations}
+Here is a simplified version of some code from Assignment 1.
+\lstinputlisting[language={C++},basicstyle=\scriptsize]{code/opt.C}
+
+\vspace*{1em}
+\noindent {\bf (part a, 10 points each)}
+Describe two compiler optimizations which could apply to this code
+and write out the resulting code after optimization.
+Briefly summarize the conditions that need to hold for the code
+to be safe. I don't think that any additional qualifiers would
+help in this case, but you can add them if you want.
+
+\vspace*{1em}
+\noindent {\bf (part b, 5 points)}
+Given this implementation of function {\tt montecarlo()}, 
+how far could an all-powerful compiler go in optimizing it\footnote{$\sum^n i = \frac{n(n+1)}{2}$.}?
+Write down the most optimized possible version of this
+function that you can think of.
+
+\section{Fine-grained Locking}
+
+Here is some tree traversal code.
+\lstinputlisting[language={C},basicstyle=\scriptsize]{code/tree.c}
+
+\vspace*{1em} \noindent
+{\bf (part a, 5 points)} What happens if you run this code on a tree of
+nonzero size? How can you fix that problem?
+
+%    pthread_mutexattr_settype(&m1_attr, PTHREAD_MUTEX_RECURSIVE);
+
+\vspace*{1em} \noindent
+{\bf (part b, 5 points)} Why would we say that this code uses
+\emph{coarse-grained locking}? What is the disadvantage of
+coarse-grained locking?
+
+\vspace*{1em} \noindent
+{\bf (part c, 15 points)} Write down versions of {\tt struct tree} and {\tt find()} which use
+fine-grained locks. Assume that {\tt find()} may be called from a number of
+threads on an multicore machine and that nodes may be added as children concurrently while holding lock {\tt m1}. Discuss the relative performance of the
+original and your new version in relevant contexts.
+
+
+\section{Parallelization}
+\label{sec:par}
+
+Consider the following linked list traversal. 
+
+\lstinputlisting[language={C},basicstyle=\small]{code/traverse.c}
+
+\vspace*{1em} \noindent {\bf (part a, 15 points)} Write down a pthreads parallelization of function {\tt
+  calculate()} which uses 3 cores. Your parallelization should, of course, return the
+same value.
+
+\vspace*{1em} \noindent {\bf (part b, 5 points)} Let's say that the linked list has
+2 million elements. (a) Assume that you have a single processor with 8
+cores. Estimate relative runtimes for the original version and the
+parallelized version and describe the side effects of the
+transformation. (Is it going to be faster or slower? Roughly speaking,
+by how much?) Support your estimate.  (b) Same question, but for a
+machine with 4 physical CPUs: estimate runtimes, say why.
+
+% part a: should run in about the same time; per-node processing
+% is not the bottleneck. You now use 3 CPUs instead of 1.
+%
+% part b: should run way slower because you're contending the bus.
+
+\vspace*{1em} \noindent {\bf (part c, 5 points)} You can change anything you want.
+How can you parallelize the code? What speedup would you expect
+from your parallelization?
+
+% use an array
+
+\newpage
+\section{OpenMP}
+
+\noindent
+{\bf (part a, 10 points)} Consider again your solution from Question~\ref{sec:par}
+part~(a).  This time, use OpenMP tasks to parallelize the
+code. (Again, you should be aiming for something that uses 3
+cores). Describe how your code avoids race conditions and visibility
+problems.
+
+\vspace*{1em}
+\noindent
+{\bf (part b, 15 points)} Now consider the following code.
+\lstinputlisting[language={C},basicstyle=\small]{code/meschach.c}
+Parallelize this code with OpenMP pragmas. Indicate
+data types for all 3 non-loop variables. Argue that your parallelization
+is safe.
+
+% could assume that max is an acceptable reduction operator
+% or an atomic
+
+\newpage
+\section{OpenCL}
+
+Here is a na\"ive implementation of a substring search
+similar to C's {\tt strstr} function.
+
+\lstinputlisting[language={C},basicstyle=\small]{code/match.c}
+
+\vspace*{1em} \noindent
+Your task is to write a OpenCL code which implements the substring
+search in parallel.
+
+\vspace*{1em} \noindent
+{\bf (part a, 6 marks)} Explain all the buffers that you would declare
+in the host code and state whether each buffer should be read-only,
+write-only, or read/write.
+
+\vspace*{1em} \noindent
+{\bf (part b, 4 marks)} Describe the global range you'd pass to 
+{\tt enqueueNDRangeKernel}.
+
+\vspace*{1em} \noindent
+{\bf (part c, 15 marks)} Write your OpenCL kernel implementation of 
+{\tt mysubstr()}. Although I won't be super picky about syntax,
+you have to include the important points.
+
+
+\section{Limitations to Parallelization}
+
+We have a problem we need to solve. We always need 10 seconds
+of sequential setup time. After the setup, we can perfectly parallelize
+the rest of the code.
+
+\vspace*{1em} \noindent
+{\bf (part a, 7.5 marks)} We have 8 processors and 20 seconds.
+What is our speedup over a sequential execution?
+
+\vspace*{1em} \noindent
+{\bf (part b, 7.5 marks)} Now we have 1,000 seconds and the same
+4 processors. What is our speedup now?
+
+\vspace*{1em} \noindent
+{\bf (part c, 10 marks)} Assume that we have a \emph{fixed}
+problem size, with the same amount of work as in part (a).
+How many processors do we need to get the same speedup as in
+part~(b)?
+
+%estimate potential speedup given profiling data
+
+%Amdahl's law calculation from profiling
+
+\end{document}

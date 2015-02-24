@@ -1,0 +1,23 @@
+Bandwidth versus latency.
+Modern hardware: mispredicts, etc.
+Calculating speedups and maximum speedups: Amdahl's Law and Gustafson's Law.
+Concurrency vs Parallelism.
+Threads: Pthreads, simple locks, synchronizing threads, race conditions.
+Asynchronous/nonblocking I/O.
+Working with the compiler (notably inlining).
+Other compiler optimizations; static and profile-guided.
+Dependencies (types of).
+Breaking dependencies: speculative execution, value speculation. 
+Parallelization patterns.
+Automatic parallelization.
+OpenMP; shared variables and race conditions in OpenMP.
+Memory models, reordering, fences and barriers, atomic instructions.
+Lock granularity.
+Cache coherency.
+Profiling: how it works, how it goes wrong.
+Using high-level language abstractions: sorting; vectors vs lists---analysis.
+GPU programming, notably with OpenCL. Password cracking application.
+Reduced-resource computation.
+High-performance languages.
+OpenMPI.
+

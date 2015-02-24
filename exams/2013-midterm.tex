@@ -1,0 +1,194 @@
+\documentclass[12pt]{article}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{fullpage}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,calc,automata}
+
+\begin{document}
+
+\title{Programming for Performance (ECE459): Midterm}
+\author{}
+\renewcommand{\today}{}
+\maketitle
+
+ ~\\[-8em]
+
+\begin{center}
+{\Large February 27, 2013}
+\end{center}
+
+This open-book midterm has 5 pages and 4 questions, worth 25 points each. Answer
+the questions in your answer book. You may consult any printed
+material (books, notes, etc).
+
+\section{Short Answer}
+
+Answer these questions using at most three sentences. Each question is worth
+2.5 points.
+
+\begin{enumerate}
+\item Which is faster, {\tt \#pragma omp single} or {\tt \#pragma omp master}? Why?
+\item You are running a Monte Carlo calculation on an otherwise-unloaded 8-core machine. Explain why performance goes down when you start 9 threads instead of 8.
+\item You are running a simple web server, again on an otherwise-unloaded 8-core machine. The web server works as follows: when a main thread accepts a connection, it dispatches a thread from a thread pool to respond to the request. Do you expect better throughput from a pool with 8 or 9 threads? Why?
+\item Consider a C list: \verb+typedef struct s { struct s* next; void * data; } S;+. How can you leverage parallelism in traversing this linked list? 
+\item What does the {\tt volatile} qualifier ensure? What are two problems that it does not protect against?
+\item Let {\tt x = y = 0}. T1 contains {\tt x = 1; r1 = y;} and T2 contains {\tt y = 1; r2 = x;}. Show me one possible result from a weak consistency model that is not possible in sequential consistency.
+\item Will you ever get a race condition from converting an OpenMP shared variable into a private variable? Why or why not? 
+\item If you change an OpenMP shared variable into a private variable, can the behaviour of the program change? If not, why not? If so, show me an example. (``Three sentences'' applies to the explanation of the example.)
+\item Here's a function prototype: {\tt void foo(int * restrict p, int * restrict q);}. Write a call to {\tt foo()} which does not respect the {\tt restrict} qualifier, including necessary context. 
+\item Write down one condition when you'd parallelize a middle or inner loop rather than the outermost loop.
+\end{enumerate}
+
+\section{Zeroing a Register}
+%http://randomascii.wordpress.com/2012/12/29/the-surprising-subtleties-of-zeroing-a-register/
+
+Let's say that you are working at the x86 assembler level and you want
+to zero register {\tt eax}. The most straightforward way is to write:
+
+\begin{verbatim}
+  mov eax, 0
+\end{verbatim}
+
+\noindent
+It turns out that this is fairly efficient: it takes one cycle to execute
+this statement and the throughput is 3 per cycle, which is the maximum
+integer throughput possible on a Sandybridge.
+
+\vspace*{1em} \noindent
+An alternative way of zeroing a register is by exclusive-oring it with
+itself:
+
+\begin{lstlisting}
+  xor eax, eax
+\end{lstlisting}
+
+\paragraph{Question (2a) (5 points).} Why is there a performance advantage 
+from using {\tt xor} rather than {\tt mov}? The cycle count and
+throughput are exactly the same. (Hint: what slows down modern processors?)
+
+\vspace*{1em} \noindent
+Now consider the following code fragment:
+
+\begin{lstlisting}[numbers=left]
+     add eax, 1
+     mov ebx, eax       ; ebx <- eax
+     xor eax, eax
+     add eax, ecx       ; eax <- eax + ecx
+\end{lstlisting}
+
+\paragraph{Question (2b) (10 points).} 
+We'd like to issue instructions out-of-order. Data dependencies
+prevent that.  Identify all data dependencies between instructions (1)
+through (4). Based on your list of dependencies, say why each pair of
+instructions could or could not execute out of order.
+
+\paragraph{Question (2c) (10 points total).} How can the processor execute instructions
+(1) and (3) out-of-order anyway? (5 points) Rewrite the list of four
+instructions to permit out-of-order execution. You may use new
+registers. (Optionally, explain what's going on at an architectural
+level behind-the-scenes). (5 points) Identify the dependencies in the
+rewritten instructions and say why each pair of instructions could or
+could not execute out of order.
+
+\newpage
+\section{Dynamic Scheduling using Pthreads}
+The goal of this question is to rewrite the following OpenMP code
+using Pthreads-like constructs. You may use the following primitives: 1) a queue data
+structure, which is not itself thread-safe (so you can enqueue and
+dequeue objects from the queue); 2) Pthreads mutual exclusion primitives;
+3) Pthreads thread create, join and detach primitives.
+
+I am looking for the use of the proper concepts. For full marks, use
+the appropriate Pthreads primitives in your solution. I'm not looking
+for the syntax to be exactly right, but I'm looking for the
+appropriate choice of primitives. Proper problem decomposition along
+with a handwavy pseudocode solution will get you about 15 marks out of
+25---that depends on how precise your solution is.
+
+Please do not hardcode the work distribution among threads. You can
+hardcode the number of worker threads to 4, if that makes your life
+easier (it shouldn't.)
+\begin{lstlisting}[numbers=left,language=C,basicstyle=\scriptsize]
+double calc(int count) {
+  double d = 1.0;
+  for (int i = 0; i < count*count; i++) d += d;
+  return d;
+}
+
+int main() {
+  double data[200][200];
+  int i, j;
+  #pragma omp parallel for private(i, j) shared(data) schedule(dynamic, 50)
+  for (int i = 0; i < 200; i++) {
+    for (int j = 0; j < 200; j++) {
+      data[i][j] = calc(i+j);
+    }
+  }
+}
+\end{lstlisting}
+
+\newpage
+\section{Race Conditions and Memory Barriers}
+Consider the following (inefficient) function to determine primality.
+Given an input $v$, it iterates up to $\lfloor \sqrt{v} \rfloor + 1$,
+searching for factors of $v$. 
+
+\begin{lstlisting}[numbers=left,language=C]
+// shared array; assume initialized to all 1's.
+int pflag[LARGE];
+
+int is_prime(int v) {
+    int i;
+    int bound = floor(sqrt ((double)v)) + 1;
+     
+    for (i = 2; i < bound; i++) {
+        /* No need to check against known composites */ 
+        if (!pflag[i]) 
+            continue;
+        if (v % i == 0) { 
+            pflag[v] = 0;
+            return 0;
+        }
+    }
+    return (v > 1); 
+}
+\end{lstlisting}
+
+\paragraph{Question (4a) (15 points total).} 
+Assume that function {\tt is\_prime()} is called concurrently from
+two threads. (5 points) Identify the race condition. (5 points) Using locks
+or otherwise, eliminate the race condition. (5 points) Argue that the race
+is benign: it never affects the output of the function.
+
+\subsection*{Memory Barriers}
+Now consider the following C++ code.
+\begin{lstlisting}[numbers=left,language=C++]
+class Singleton {
+public:
+  static Singleton* instance() {
+    if (pInstance == 0) {
+      lock(l);                 // this does what you think it does
+      if (pInstance == 0) {
+        pInstance = new Singleton;
+      }
+      unlock(l);
+    }
+    return pInstance;
+  }
+
+private:
+  static Singleton* pInstance = 0;
+  Lock l;
+};
+\end{lstlisting}
+\paragraph{Question (4b) (10 points total + 1 bonus).} This code attempts to implement a {\tt Singleton}
+design pattern, but it doesn't really work in the presence of multiple
+threads. In particular, there is only supposed to be one {\tt
+  Singleton} object ever.  (5 points) Show me one execution trace that
+gives the wrong result, and explain why it is wrong. (Hint: look at the title of the question.) (5 points)
+Propose a fix for the code and explain why it works. Anything correct will
+get you full points; it does not have to be efficient at all. (1 bonus point)
+Propose an efficient fix for this code.
+
+\end{document}
