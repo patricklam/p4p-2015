@@ -1,0 +1,379 @@
+% 62 minutes
+
+\documentclass[11pt]{article}
+\usepackage{listings}
+\usepackage{tikz}
+\usepackage{url}
+%\usepackage{algorithm2e}
+\usetikzlibrary{arrows,automata,shapes,decorations.pathreplacing,positioning}
+\tikzstyle{block} = [rectangle, draw, fill=blue!20, 
+    text width=2.5em, text centered, rounded corners, minimum height=2em]
+\tikzstyle{bw} = [rectangle, draw, fill=blue!20, 
+    text width=3.5em, text centered, rounded corners, minimum height=2em]
+
+\newcommand{\handout}[5]{
+  \noindent
+  \begin{center}
+  \framebox{
+    \vbox{
+      \hbox to 5.78in { {\bf ECE459: Programming for Performance } \hfill #2 }
+      \vspace{4mm}
+      \hbox to 5.78in { {\Large \hfill #5  \hfill} }
+      \vspace{2mm}
+      \hbox to 5.78in { {\em #3 \hfill #4} }
+    }
+  }
+  \end{center}
+  \vspace*{4mm}
+}
+
+\newcommand{\lecture}[4]{\handout{#1}{#2}{#3}{#4}{Lecture #1}}
+\topmargin 0pt
+\advance \topmargin by -\headheight
+\advance \topmargin by -\headsep
+\textheight 8.9in
+\oddsidemargin 0pt
+\evensidemargin \oddsidemargin
+\marginparwidth 0.5in
+\textwidth 6.5in
+
+\parindent 0in
+\parskip 1.5ex
+%\renewcommand{\baselinestretch}{1.25}
+
+% http://gurmeet.net/2008/09/20/latex-tips-n-tricks-for-conference-papers/
+\newcommand{\squishlist}{
+ \begin{list}{$\bullet$}
+  { \setlength{\itemsep}{0pt}
+     \setlength{\parsep}{3pt}
+     \setlength{\topsep}{3pt}
+     \setlength{\partopsep}{0pt}
+     \setlength{\leftmargin}{1.5em}
+     \setlength{\labelwidth}{1em}
+     \setlength{\labelsep}{0.5em} } }
+\newcommand{\squishlisttwo}{
+ \begin{list}{$\bullet$}
+  { \setlength{\itemsep}{0pt}
+     \setlength{\parsep}{0pt}
+    \setlength{\topsep}{0pt}
+    \setlength{\partopsep}{0pt}
+    \setlength{\leftmargin}{2em}
+    \setlength{\labelwidth}{1.5em}
+    \setlength{\labelsep}{0.5em} } }
+\newcommand{\squishend}{
+  \end{list}  }
+% http://gurmeet.net/2008/09/20/latex-tips-n-tricks-for-conference-papers/
+\newenvironment{itemizep}{
+ \begin{itemize}
+  \setlength{\itemsep}{0pt}
+  \setlength{\parsep}{3pt}
+  \setlength{\topsep}{3pt}
+  \setlength{\partopsep}{0pt}
+  \setlength{\leftmargin}{1.5em}
+  \setlength{\labelwidth}{1em}
+  \setlength{\labelsep}{0.5em} }
+ {\end{itemize}}
+
+\begin{document}
+
+\lecture{21 --- February 27, 2015}{Winter 2015}{Patrick Lam}{version 0}
+
+\section*{C/C++11 Memory Model}
+
+We have talked about memory models in the context of OpenMP. Let's
+talk about the core languages now---that is, C and C++\footnote{\url{http://www.quora.com/C++-programming-language/How-are-the-threading-and-memory-models-different-in-C++-as-compared-to-C}}\footnote{\url{http://rsim.cs.illinois.edu/Pubs/08PLDI.pdf}}---when
+not using OpenMP.
+
+What outputs are possible from this example?
+
+\begin{tabular}{ll}
+      \begin{minipage}{.2\textwidth}
+        Thread 1:
+        \begin{lstlisting}
+  foo = 7;
+  bar = 42;
+        \end{lstlisting}
+      \end{minipage} &
+      \begin{minipage}{.4\textwidth}
+        Thread 2:
+        \begin{lstlisting}
+  printf("%d\n", foo);
+  printf("%d\n", bar);
+        \end{lstlisting}
+      \end{minipage}
+\end{tabular}
+
+You might think ``undefined'', but actually it's worse than that. The 
+C11 and C++11 language definitions don't even say what a thread is.
+Of course, there is Pthreads, but that is a library, not the language itself.
+So you can't even ask this question when talking about pre-C11/C++11 versions
+of C and C++.
+
+C++11 (and C11) have improved the situation, though. There is actually
+a memory model (based on an abstract machine) and threading primitives
+such as mutexes, atomics, and memory barriers---the concepts that we
+have seen in this course.
+
+Now, we can ask the question about the behaviour of the above example.
+It does have undefined behaviour, since there is contended access to
+the variables {\tt foo} and {\tt bar}. How can we fix that?
+
+\paragraph{Atomics.}
+A good exam question: if {\tt foo} is atomic, what are the possible outputs? 
+    
+    \begin{tabular}{ll}
+      \begin{minipage}{.25\textwidth}
+        Thread 1:
+        \begin{lstlisting}
+  foo.store(7);
+  bar.store(42);
+        \end{lstlisting}
+      \end{minipage} &
+      \begin{minipage}{.45\textwidth}
+        Thread 2:
+        \begin{lstlisting}
+  printf("%d\n", foo.load());
+  printf("%d\n", bar.load());
+        \end{lstlisting}
+      \end{minipage}
+    \end{tabular}
+
+
+
+\section*{Good C++ Practice}
+Lots of people use postfix ({\tt i++}) out of habit, but prefix ({\tt ++i}) is better.
+
+In C, this isn't a problem. 
+In some languages (like C++), it can be.
+
+\paragraph{Why? Overloading.} In C++, you can overload the {\tt ++} and {\tt --} operators.
+
+  \begin{lstlisting}
+class X {
+public:
+  X& operator++();
+  const X operator++(int);
+...
+};
+
+X x;
+++x; // x.operator++();
+x++; // x.operator++(0);
+  \end{lstlisting}
+
+Prefix is also known as {\bf increment and fetch}, and might be implemented like this:
+  \begin{lstlisting}
+X& X::operator++()
+{
+  *this += 1;
+  return *this;
+}
+  \end{lstlisting}
+~\\[1em]
+
+  Postfix is also known as {\bf fetch and increment}. Note that you have to make a copy of
+the old value:
+  \begin{lstlisting}
+const X X::operator++(int)
+{
+  const X old = *this;
+  ++(*this);
+  return old;
+}
+  \end{lstlisting}
+
+So, if you're the least concerned about efficiency (and why else would you be
+taking programming for performance?), always use
+  \emph{prefix} increments/decrements instead of defaulting to postfix.
+
+Only use {\tt postfix} when you really mean it, to be on the safe side.
+
+\section*{Locking Granularity}
+
+Locks prevent data races.
+
+However, using locks involves a trade-off between coarse-grained
+locking, which can significantly reduce opportunities for parallelism,
+and fine-grained locking, which requires more careful design,
+increases locking overhead and is more prone to bugs.  Locks' extents
+constitute their {\bf granularity}. In coarse-grained locking, you
+lock large sections of your program with a big lock; in fine-grained
+locking, you divide the locks and protect smaller sections.
+
+We'll discuss three major concerns when using locks:
+  \begin{itemizep}
+    \item overhead;
+    \item contention; and
+    \item deadlocks.
+  \end{itemizep}
+We aren't even talking about under-locking (i.e. remaining race conditions).
+
+\paragraph{Lock Overhead.}
+  Using a lock isn't free. You pay:
+  \begin{itemizep}
+    \item allocated memory for the locks;
+    \item initialization and destruction time; and
+    \item acquisition and release time.
+  \end{itemizep}
+  These costs scale with the number of locks that you have.
+
+\paragraph{Lock Contention.}
+ Most locking time is wasted waiting for the lock to become available.
+We can fix this by:
+      \begin{itemizep}
+        \item making the locking regions smaller (more granular); or
+        \item making more locks for independent sections.
+      \end{itemizep}
+
+\paragraph{Deadlocks.} Finally, the more locks you have, the more you have to worry about deadlocks.
+
+As you know, the key condition for a deadlock is waiting for a lock held by process $X$ while holding
+a lock held by process $X'$. ($X = X'$ is allowed).
+
+\newpage
+Consider, for instance, two processors trying to get two locks.
+
+\begin{center}
+  \begin{tabular}{ll}
+\begin{minipage}{.4\textwidth}
+      {\bf Thread 1}
+
+      \verb+Get Lock 1+
+
+      \verb+Get Lock 2+
+
+      \verb+Release Lock 2+
+
+      \verb+Release Lock 1+
+\end{minipage} & 
+\begin{minipage}{.4\textwidth}
+      {\bf Thread 2}
+
+      \verb+Get Lock 2+
+
+      \verb+Get Lock 1+
+
+      \verb+Release Lock 1+
+
+      \verb+Release Lock 2+
+\end{minipage}
+\end{tabular}
+\end{center}
+
+ Processor 1 gets Lock 1, then Processor 2 gets Lock 2. Oops! They
+ both wait for each other. (Deadlock!).
+
+To avoid deadlocks, always be careful if your code {\bf acquires a
+  lock while holding one}.  You have two choices: (1) ensure
+consistent ordering in acquiring locks; or (2) use trylock.
+
+As an example of consistent ordering:
+\begin{center}
+\begin{tabular}{ll}
+\begin{minipage}{.4\textwidth}
+  \begin{lstlisting}
+void f1() {
+    lock(&l1);
+    lock(&l2);
+    // protected code
+    unlock(&l2);
+    unlock(&ll);    
+}
+\end{lstlisting}
+\end{minipage}&
+\begin{minipage}{.4\textwidth}
+\begin{lstlisting}
+void f2() {
+    lock(&l1);
+    lock(&l2);
+    // protected code
+    unlock(&l2);
+    unlock(&ll);    
+}
+  \end{lstlisting}
+\end{minipage}
+\end{tabular}
+\end{center}
+This code will not deadlock: you can only get {\bf l2} if you have
+{\bf l1}. Of course, it's harder to ensure a consistent deadlock when lock
+identity is not statically visible.
+
+Alternately, you can use trylock. Recall that Pthreads' {\tt trylock}
+returns 0 if it gets the lock.  So, this code also won't deadlock: it
+will give up {\bf l1} if it can't get {\bf l2}.
+  \begin{lstlisting}
+void f1() {
+    lock(&l1);
+    while (trylock(&l2) != 0) {
+        unlock(&l1);
+        // wait
+        lock(&l1);
+    }
+    // protected code
+    unlock(&l2);
+    unlock(&ll);    
+}
+  \end{lstlisting}
+  (Incidentaly, using trylocks can also help you measure lock contention.)
+
+\subsection*{Coarse-Grained Locking}
+One way of avoiding problems due to locking is to use few locks
+(perhaps just one!). This is \emph{coarse-grained locking}.
+It does have a couple of advantages:
+  \begin{itemizep}
+    \item it is easier to implement;
+    \item with one lock, there is no chance of deadlocking; and
+    \item it has the lowest memory usage and setup time possible.
+  \end{itemizep}
+
+It also, however, has one big disadvantage in terms of programming for performance:
+  \begin{itemizep}
+    \item your parallel program will quickly become sequential.
+  \end{itemizep}
+
+\paragraph{Example: Python (and other interpreters).}
+Python puts a lock around the whole interpreter (known as the
+\emph{global interpreter lock}).  This is the main reason (most)
+scripting languages have poor parallel performance; Python's just an
+example.
+
+Two major implications:
+\begin{itemizep}
+\item The only performance benefit you'll see from threading is if one of the threads is
+      waiting for IO.
+\item But: any non-I/O-bound threaded program will be {\bf slower} than the sequential
+      version (plus, the interpreter will slow down your system).
+\end{itemizep}
+
+\subsection*{Fine-Grained Locking}
+On the other end of the spectrum is \emph{fine-grained locking}. The big
+advantage:
+  \begin{itemizep}
+    \item it maximizes parallelization in your program.
+  \end{itemizep}
+
+However, it also comes with a number of disadvantages:
+  \begin{itemizep}
+    \item if your program isn't very parallel, it'll be mostly wasted memory and setup time;
+    \item plus, you're now prone to deadlocks; and
+    \item fine-grained locking is generally more error-prone (be sure you grab the right lock!)
+  \end{itemizep}
+
+\paragraph{Examples.}
+    The Linux kernel used to have {\bf one big lock} that essentially
+    made the kernel sequential.  This worked fine for single-processor
+    systems!  The introduction of symmetric multiprocessor systems
+    (SMPs) required a more aggressive locking strategy, though, and
+    the kernel now uses finer-grained locks for performance.
+
+    Databases may lock fields / records / tables. (fine-grained $\rightarrow$ coarse-grained).
+
+    You can also lock individual objects (but beware: sometimes you need transactional guarantees.)
+
+\paragraph{Live Coding Example.} I ran the code from the midterm (augmented with
+code to populate the tree) using 1) a coarse-grained lock; and 2)
+per-item fine-grained locks.
+
+Fine-grained locks were suspiciously fast.
+
+\end{document}
