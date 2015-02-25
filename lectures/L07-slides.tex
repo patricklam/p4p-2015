@@ -3,7 +3,6 @@
 % Text packages to stop warnings
 \usepackage{lmodern}
 \usepackage{textcomp}
-\usepackage{tikz}
 \usepackage{listings}
 
 % Themes
@@ -14,7 +13,7 @@
 % Suppress the navigation bar
 \beamertemplatenavigationsymbolsempty
 
-\lstset{basicstyle=\scriptsize,frame=single}
+\lstset{basicstyle=\scriptsize, frame=single}
 
 \newenvironment{changemargin}[1]{% 
   \begin{list}{}{% 
@@ -27,11 +26,8 @@
   }% 
   \item[]}{\end{list}} 
 
-\title{Lecture 06---More on Threads}
-\subtitle{ECE 459: Programming for Performance}
-\author{Patrick Lam}
-\institute{University of Waterloo}
-\date{January 16, 2015}
+\title{Lecture 07---{\tt epoll}, async I/O, curl\_multi}
+\date{January 19, 2015}
 
 \begin{document}
 
@@ -41,195 +37,441 @@
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\section{Synchronization}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}
-  \frametitle{Mutual Exclusion}
+  \frametitle{Roadmap}
 
-\begin{changemargin}{1.5cm}
-    Mutexes are the most basic type of synchronization.
-    \vfill
+  \Large
+    \begin{changemargin}{2cm}
+  Past: Modern Hardware, Threads; \\[1em]
+
+  Now: Non-blocking I/O;\\[1em]
+
+  Next: Race Conditions, Locking.
+    \end{changemargin}
+  
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Last Time}
+
+  \begin{changemargin}{2.5cm}
+  \begin{itemize}
+    \item Assignment 1 walkthrough.
+    \item Concept behind non-blocking I/O.
+  \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\part{Async I/O with epoll}
+\frame{\partpage}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Using {\tt epoll}}
+  \begin{changemargin}{2em}
+    Key idea: give {\tt epoll} a bunch of file descriptors;\\
+     \hspace*{2em}wait for events to happen.\\[1em]
+
+     Steps:
+     \begin{enumerate}
+       \item create an instance ({\tt epoll\_create1});
+       \item populate it with file descriptors ({\tt epoll\_ctl});
+       \item wait for events ({\tt epoll\_wait}).
+     \end{enumerate}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Creating an {\tt epoll} instance}
+  \begin{changemargin}{2em}
+    \begin{minipage}{.5\textwidth}
+    \begin{lstlisting}
+   int epfd = epoll_create1(0);
+    \end{lstlisting}
+    \end{minipage}
+
+    {\tt efpd} doesn't represent any files; use it to talk to {\tt epoll}.\\[1em]
+
+    0 represents the flags (only flag: {\tt EPOLL\_CLOEXEC}).
+    
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Populating the {\tt epoll} instance}
+  \begin{changemargin}{2em}
+    To add {\tt fd} to the set of descriptors watched by {\tt epfd}:
+    \begin{lstlisting}
+   struct epoll_event event;
+   int ret;
+   event.data.fd = fd;
+   event.events = EPOLLIN | EPOLLOUT;
+   ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &event);
+    \end{lstlisting}
+
+    Can also modify and delete descriptors from {\tt epfd}.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Waiting on an {\tt epoll} instance}
+  \begin{changemargin}{2em}
+    Now we're ready to wait for events on any file descriptor in {\tt epfd}.
+    \begin{lstlisting}
+  #define MAX_EVENTS 64
+
+  struct epoll_event events[MAX_EVENTS];
+  int nr_events;
+
+  nr_events = epoll_wait(epfd, events, MAX_EVENTS, -1);
+    \end{lstlisting}
+
+-1: wait potentially forever; otherwise, milliseconds to wait.\\[1em]
+
+Upon return from {\tt epoll\_wait}, we have {\tt nr\_events} events ready.
+
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Level-Triggered and Edge-Triggered Events}
+  \begin{changemargin}{2em}
+    Default {\tt epoll} behaviour is \structure{level-triggered}:\\
+    \quad return whenever data is ready.\\[1em]
+
+    Can also specify (via {\tt epoll\_ctl}) \structure{edge-triggered} behaviour:\\
+    \quad return whenever there is a change in readiness.\\[1em]
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Live Coding: Level-Triggered vs Edge-Triggered}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Asynchronous I/O}
+  \begin{changemargin}{2em}
+    POSIX standard defines \structure{aio} calls.\\[1em]
+
+    These work for disk as well as sockets.\\[1em]
+
+    Key idea: you specify the action to occur when I/O is ready:
     \begin{itemize}
-    \item Only one thread can access code protected by a mutex at a time.
-    \vfill
-    \item All other threads must wait until the mutex is free before they can
-      execute the protected code.
+      \item nothing;
+      \item start a new thread;
+      \item raise a signal
     \end{itemize}
-\end{changemargin}
+
+    Submit the requests using e.g. {\tt aio\_read} and {\tt aio\_write}.\\[1em]
+    Can wait for I/O to happen using {\tt aio\_suspend}.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Nonblocking I/O with curl}
+  \begin{changemargin}{2em}
+    Similar idea to {\tt epoll}:
+\begin{itemize}
+\item build up a set of descriptors;
+\item invoke the transfers and wait for them to finish;
+\item see how things went.
+\end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\part{Using curl\_multi}
+\frame{\partpage}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{curl\_multi initialization}
+
+  \begin{changemargin}{2cm}
+    curl\_multi: work with multiple resources at once.\\[1em]
+
+    How? Similar idea to {\tt epoll}:\\[1em]
+
+    1. To use {\tt curl\_multi}, first create the individual requests \\ \hspace{2em} ({\tt curl\_easy\_init}).\\
+    ~~~(Set options as needed on each handle).\\[1em]
+
+    2. Then, combine them with:
+    \begin{itemize}
+      \item {\tt curl\_multi\_init()};
+      \item {\tt curl\_multi\_add\_handle()}.
+    \end{itemize}
+
+  \end{changemargin}
 
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}
-  \frametitle{Live Coding Example: Mutual Exclusion}
-\end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  \frametitle{curl\_multi\_perform: option 1, select-based interface}
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}[fragile]
-  \frametitle{Creating Mutexes---Pthreads Example}
+  \begin{changemargin}{1.5cm}
+    Main idea: put in requests and wait for results.\\[1em]
 
-\begin{changemargin}{1.5cm}
-  \begin{lstlisting}
-pthread_mutex_t m1 = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t m2;
+    {\tt curl\_multi\_perform} is a generalization of {\tt curl\_easy\_perform} to multiple resources.\\[1em]
 
-pthread_mutex_init(&m2, NULL);
-...
-pthread_mutex_destroy(&m1);
-pthread_mutex_destroy(&m2);
-  \end{lstlisting}
+    Handle completed transfers with {\tt curl\_multi\_info\_read}.
 
-  \begin{itemize}
-    \item Two ways to initialize mutexes: statically and dynamically
-    \item If you want to include attributes, you need to use the dynamic version
-  \end{itemize}
-\end{changemargin}
-
-\end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}[fragile]
-  \frametitle{Creating Mutexes---C++11 Example}
-
-\begin{changemargin}{1.5cm}
-  \begin{lstlisting}
-#include <mutex>
-
-std::mutex m1, m2;
-  \end{lstlisting}
-
-  Resources released when objects go out of scope.
-\end{changemargin}
+  \end{changemargin}
 
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}
-  \frametitle{Pthreads Mutex Attributes}
+  \frametitle{calling curl\_multi\_perform}
 
-\begin{changemargin}{1.5cm}
-  \begin{itemize}
-    \item {\bf Protocol}: specifies the protocol used to prevent priority
-      inversions for a mutex
-    \item {\bf Prioceiling}: specifies the priority ceiling of a mutex
-    \item {\bf Process-shared}: specifies the process sharing of a mutex
-  \end{itemize}
-  You can specify a mutex as {\it process shared} so that you can access it
-  between processes. In that case, you need to use shared memory and {\tt mmap},
-  which we won't get into.
-\end{changemargin}
+  \begin{changemargin}{2cm}
+    perform interface requires use of {\tt select} (not {\tt epoll}).\\[1em]
+
+    usage (once you've {\tt curl\_multi\_add\_handle}'d):\\[.5em]
+    \hspace*{-2em} {\tt curl\_multi\_perform(multi\_handle, \&still\_running)}\\[.5em]
+    performs a non-blocking read/write, and\\
+    returns the number of still-active handles\\ \hspace*{2em} (with more data to come).
+
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Next steps after curl\_multi\_perform}
+
+  \begin{changemargin}{2cm}
+    do
+    \begin{itemize}
+      \item organize a call to {\tt select}; and
+      \item call {\tt curl\_multi\_perform} again
+    \end{itemize}
+    while there are still running transfers.\\[1em]
+
+    After the {\tt curl\_multi\_perform}, you can also delete, alter,
+    and re-add an {\tt curl\_easy\_handle} when a transfer finishes.
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Before calling {\tt select}}
+
+  \begin{changemargin}{2cm}
+    {\tt select} needs a timeout and an {\tt fdset}. \\
+    \qquad ({\tt curl} provides both.)\\[1em]
+
+    Initializing the {\tt fdset} from the {\tt multi\_handle}:
+  \end{changemargin}
+
+\begin{lstlisting}
+    // zero the fd-sets
+    FD_ZERO(&fdread); FD_ZERO(&fdwrite); FD_ZERO(&fdexcep);
+    // retrieve the fds, check for error
+    curl_multi_fdset(multi_handle, 
+                     &fdread, &fdwrite, &fdexcep, &maxfd);
+    if (maxfd < -1) abort_("multi_fdset: couldn't wait for fds");
+\end{lstlisting}
+
+  \begin{changemargin}{2cm}
+    Retrieving the proper timeout:
+  \end{changemargin}
+\begin{lstlisting}
+    curl_multi_timeout(multi_handle, &curl_timeout);
+\end{lstlisting}
+  \begin{changemargin}{2cm}
+    (and then convert the {\tt long} to a {\tt struct timeval}).
+  \end{changemargin}
 
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}[fragile]
-  \frametitle{Using Pthreads Mutexes: Example}
+  \frametitle{The call to {\tt select}}
 
-\begin{changemargin}{1.5cm}
-  \begin{lstlisting}
-// code
-pthread_mutex_lock(&m1);
-// protected code
-pthread_mutex_unlock(&m1);
-// more code
-  \end{lstlisting}
-  \vfill
-  \begin{itemize}
-    \item Everything within the {\tt lock} and {\tt unlock} is protected.
-    \item Be careful to avoid deadlocks if you are using multiple mutexes.
-    \item Also you can use {\tt pthread\_mutex\_trylock}, if needed.
-  \end{itemize}
-\end{changemargin}
+\begin{lstlisting}
+  rc = select(maxfd + 1, &fdread, &fdwrite, &fdexcep, &timeout);
+  if (rc == -1) abort_("[main] select error");
+\end{lstlisting}
+
+  \begin{changemargin}{2cm}
+    Wait for one of the fds to become ready,\\ ~~or for timeout to elapse. \\[1em]
+    What next?\\
+    \only<2>{Call {\tt curl\_multi\_perform} again to do the work.}
+  \end{changemargin}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{frame}[fragile]
-  \frametitle{Using C++11 Mutexes: Example}
+  \frametitle{Knowing what happened after {\tt curl\_multi\_perform}}
 
-\begin{changemargin}{1.5cm}
-  \begin{lstlisting}
-// code
-m1.lock()    
-// protected code
-m1.unlock()
-// more code
-  \end{lstlisting}
-  \vfill
-  \begin{itemize}
-    \item Everything within the {\tt lock} and {\tt unlock} is protected.
-    \item Be careful to avoid deadlocks if you are using multiple mutexes.
-    \item Also you can use {\tt mutex::trylock()}, if needed.
-  \end{itemize}
-\end{changemargin}
-\end{frame}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  \begin{changemargin}{2cm}
+    {\tt curl\_multi\_info\_read} will tell you.
+  \end{changemargin}
+\begin{lstlisting}
+  msg = curl_multi_info_read(multi_handle, &msgs_left);
+\end{lstlisting}
+  \begin{changemargin}{2cm}
+    and also how many messages are left.\\[1em]
+    {\tt msg->msg} can be {\tt CURLMSG\_DONE} or an error;\\
+    {\tt msg->easy\_handle} tells you who is done.\\[1em]
+  \end{changemargin}
+  \begin{changemargin}{1.25cm}
+    Some gotchas (thanks Desiye Collier):
+    \begin{itemize}
+    \item Checking \verb+msg->msg == CURLMSG_DONE+ is not sufficient to ensure that a curl request actually happened. You also need to check {\tt data.result}.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}[fragile]
-  \frametitle{Data Race Example}
-
-\begin{changemargin}{1.5cm}
-  Recall that \structure{dataraces} occur when two concurrent actions access the same
-  variable and at least one of them is a {\bf write}
-
-
-  \begin{lstlisting}
-...
-static int counter = 0;
-
-void* run(void* arg) {
-    for (int i = 0; i < 100; ++i) {
-        ++counter;
-    }
-}
-
-int main(int argc, char *argv[])
-{
-    // Create 8 threads
-    // Join 8 threads
-    printf("counter = %i\n", counter);
-}
-  \end{lstlisting}
-
-Is there a datarace in this example? If so, how would we fix it?
-\end{changemargin}
+    \item (A1 hint:) To reset an individual handle in the {\tt multi\_handle}, you need to ``replace'' it. But you shouldn't use {\tt curl\_easy\_init()}.  In fact, you don't need a new handle at all.
+    \end{itemize}
+  \end{changemargin}
 
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{frame}[fragile]
-  \frametitle{Example Problem Solution}
-\begin{changemargin}{1.5cm}
-  \begin{lstlisting}[escapechar=!]
-...
-!\structure{static pthread\_mutex\_t mutex = PTHREAD\_MUTEX\_INITIALIZER;}!
-static int counter = 0;
+\begin{frame}
+  \frametitle{curl\_multi cleanup}
 
-void* run(void* arg) {
-    for (int i = 0; i < 100; ++i) {
-        !\structure{pthread\_mutex\_lock(\&mutex);}!
-        ++counter;
-        !\structure{pthread\_mutex\_unlock(\&mutex);}!
-    }
-}
-
-int main(int argc, char *argv[])
-{
-    // Create 8 threads
-    // Join 8 threads
-    !\structure{pthread\_mutex\_destroy(\&mutex);}!
-    printf("counter = %i\n", counter);
-}
-  \end{lstlisting}
-\end{changemargin}
+  \begin{changemargin}{2cm}
+    Call {\tt curl\_multi\_cleanup} on the multi handle.\\[1em]
+    Then, call {\tt curl\_easy\_cleanup} on each easy handle.\\[2em]
+    If you replace {\tt curl\_easy\_init} by {\tt curl\_global\_init},\\
+    then call {\tt curl\_global\_cleanup} also.
+  \end{changemargin}
 
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{curl\_multi\_perform example}
+
+  \begin{changemargin}{1.5cm}
+    Not a great example:
+
+\begin{center}
+\url{http://curl.haxx.se/libcurl/c/multi-app.html}
+\end{center}
+
+    I'm not even sure it works verbatim.\\[1em]
+
+    Nevertheless, you could use it as a solution template.\\
+    You'll have to add more code to replace completed transfers.
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{A better choice: curl\_multi\_wait}
+
+  \begin{changemargin}{1.5cm}
+    Instead of using {\tt select()}, \\
+    you can use {\tt curl\_multi\_wait()}.\\[2em]
+    It's just better.\\
+  \url{https://gist.github.com/clemensg/4960504}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{curl\_multi, option 3: curl\_multi\_socket\_action}
+
+  \begin{changemargin}{1.5cm}
+    So, I couldn't quite figure out how this works. Sorry.\\[1em]
+
+    Similar to the {\tt perform} interface, but you have more control.
+
+    Advantage:
+
+\begin{quote}
+   2 - When the application discovers action on a single socket, it calls
+       libcurl and informs that there was action on this particular socket and
+       libcurl can then act on that socket/transfer only and not care about
+       any other transfers. (The previous API always had to scan through all
+       the existing transfers.)
+\end{quote}
+
+\url{http://curl.haxx.se/dev/readme-multi_socket.html}
+
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+
+  \frametitle{multi\_socket usage}
+
+\begin{changemargin}{1cm}
+From the manpage:
+\small
+\begin{itemize}
+\item Create a multi handle
+
+\item Set the socket callback with {\tt CURLMOPT\_SOCKETFUNCTION}
+
+\item Set the timeout callback with {\tt CURLMOPT\_TIMERFUNCTION}, to get to know what timeout value to use when waiting for socket activities.
+
+\item Add easy handles with {\tt curl\_multi\_add\_handle()}
+
+\item Provide some means to manage the sockets libcurl is using, so you can check them for activity. This can be done through your application code, or by way of an external library such as libevent or glib.
+
+\item Call {\tt curl\_multi\_socket\_action(..., CURL\_SOCKET\_TIMEOUT, 0, ...)} to kickstart everything. To get one or more callbacks called.
+
+\item Wait for activity on any of libcurl's sockets, use the timeout value your callback has been told.
+
+\item When activity is detected, call {\tt curl\_multi\_socket\_action()} for the socket(s) that got action. If no activity is detected and the timeout expires, call {\tt curl\_multi\_socket\_action(3)} with {\tt CURL\_SOCKET\_TIMEOUT}. 
+\end{itemize}
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+
+  \frametitle{multi\_socket example}
+
+\begin{changemargin}{2cm}
+This example is even worse than the last one:
+\begin{center}
+\url{http://curl.haxx.se/libcurl/c/hiperfifo.html}
+\end{center}~\\[1em]
+It contains more moving parts than we need to understand the API, and gets
+another library ({\tt libevent}) involved.
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 \end{document}

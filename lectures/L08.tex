@@ -1,0 +1,352 @@
+\documentclass[11pt]{article}
+\usepackage{listings}
+\usepackage{tikz}
+\usepackage{url}
+\usepackage{hyperref}
+%\usepackage{algorithm2e}
+\usetikzlibrary{arrows,automata,shapes,positioning}
+\tikzstyle{block} = [rectangle, draw, fill=blue!20, 
+    text width=2.5em, text centered, rounded corners, minimum height=2em]
+\tikzstyle{bw} = [rectangle, draw, fill=blue!20, 
+    text width=3.5em, text centered, rounded corners, minimum height=2em]
+
+\newcommand{\handout}[5]{
+  \noindent
+  \begin{center}
+  \framebox{
+    \vbox{
+      \hbox to 5.78in { {\bf ECE459: Programming for Performance } \hfill #2 }
+      \vspace{4mm}
+      \hbox to 5.78in { {\Large \hfill #5  \hfill} }
+      \vspace{2mm}
+      \hbox to 5.78in { {\em #3 \hfill #4} }
+    }
+  }
+  \end{center}
+  \vspace*{4mm}
+}
+
+\lstset{basicstyle=\ttfamily \scriptsize}
+
+\newcommand{\lecture}[4]{\handout{#1}{#2}{#3}{#4}{Lecture #1}}
+\topmargin 0pt
+\advance \topmargin by -\headheight
+\advance \topmargin by -\headsep
+\textheight 8.9in
+\oddsidemargin 0pt
+\evensidemargin \oddsidemargin
+\marginparwidth 0.5in
+\textwidth 6.5in
+
+\parindent 0in
+\parskip 1.5ex
+%\renewcommand{\baselinestretch}{1.25}
+
+% http://gurmeet.net/2008/09/20/latex-tips-n-tricks-for-conference-papers/
+\newcommand{\squishlist}{
+ \begin{list}{$\bullet$}
+  { \setlength{\itemsep}{0pt}
+     \setlength{\parsep}{3pt}
+     \setlength{\topsep}{3pt}
+     \setlength{\partopsep}{0pt}
+     \setlength{\leftmargin}{1.5em}
+     \setlength{\labelwidth}{1em}
+     \setlength{\labelsep}{0.5em} } }
+\newcommand{\squishlisttwo}{
+ \begin{list}{$\bullet$}
+  { \setlength{\itemsep}{0pt}
+     \setlength{\parsep}{0pt}
+    \setlength{\topsep}{0pt}
+    \setlength{\partopsep}{0pt}
+    \setlength{\leftmargin}{2em}
+    \setlength{\labelwidth}{1.5em}
+    \setlength{\labelsep}{0.5em} } }
+\newcommand{\squishend}{
+  \end{list}  }
+
+\begin{document}
+
+\lecture{8 --- January 21, 2015}{Winter 2015}{Patrick Lam}{version 1}
+
+\section*{Race Conditions}
+Previous courses should have introduced the concept of a race condition.
+We'll be talking about them in greater detail in this course.
+
+\paragraph{Definition.} A race occurs when you have two concurrent accesses to the
+same memory location, at least one of which is a {\bf write}.
+
+When there's a race, the final state may not be the same as running
+one access to completion and then the other. (But it ``usually'' is.
+It's nondeterministic.)
+Race conditions typically arise between variables which are shared
+between threads.
+
+\paragraph{Example.}
+\begin{lstlisting}
+#include <stdlib.h>
+#include <stdio.h>
+#include <pthread.h>
+
+void* run1(void* arg)
+{
+    int* x = (int*) arg;
+    *x += 1;
+}
+
+void* run2(void* arg)
+{
+    int* x = (int*) arg;
+    *x += 2;
+}
+
+int main(int argc, char *argv[])
+{
+    int* x = malloc(sizeof(int));
+    *x = 1;
+    pthread_t t1, t2;
+    pthread_create(&t1, NULL, &run1, x);
+    pthread_join(t1, NULL);
+    pthread_create(&t2, NULL, &run2, x);
+    pthread_join(t2, NULL);
+    printf("%d\n", *x);
+    free(x);
+    return EXIT_SUCCESS;
+}
+\end{lstlisting}
+
+\noindent
+Question: Do we have a data race? Why or why not?
+\vspace*{2em}
+%No, we don't. Only one thread is active at a time.
+
+\paragraph{Example 2.} Here's another example; keep the same thread definitions.
+\begin{lstlisting}
+int main(int argc, char *argv[])
+{
+    int* x = malloc(sizeof(int));
+    *x = 1;
+    pthread_t t1, t2;
+    pthread_create(&t1, NULL, &run1, x);
+    pthread_create(&t2, NULL, &run2, x);
+    pthread_join(t1, NULL);
+    pthread_join(t2, NULL);
+    printf("%d\n", *x);
+    free(x);
+    return EXIT_SUCCESS;
+}
+\end{lstlisting}
+
+Now do we have a data race? Why or why not?
+\vspace*{2em}
+
+% Yes, we do. We have 2 threads concurrently accessing the same data.
+
+\paragraph{Tracing our Example Data Race.} 
+What are the possible outputs? (Assume that initially {\tt *x} is 1.)
+We'll look at compiler intermediate code (three-address code) to tell.
+
+\hspace*{.2\textwidth}\begin{minipage}{.8\textwidth}
+\begin{lstlisting}[numbers=left]
+run1                          run2   
+D.1 = *x;                     D.1 = *x;
+D.2 = D.1 + 1;                D.2 = D.1 + 2
+*x = D.2;                     *x = D.2;
+  \end{lstlisting}
+\end{minipage}
+
+Memory reads and writes are key in data~races.
+
+Let's call the read and write from {\tt run1} R1 and W1; R2 and W2
+from {\tt run2}. Assuming a sane\footnote{sequentially consistent; sadly, many
+widely-used models are wilder than this.}
+memory model, $R_n$ must precede $W_n$. {\bf C and C++ do not guarantee
+  such a memory model in the presence of races.} This reasoning would
+actually only work if we declared {\tt x} as {\tt atomic}
+(see Lecture 10) and did the
+individual three-address code operations. Or, you could avoid this whole
+mess by using read-modify-write instructions.
+
+Here are all possible orderings:
+  \begin{center}
+    \begin{tabular}{llll|l}
+\multicolumn{4}{c|}{Order} & {\tt *x}\\
+\hline
+R1 & W1 & R2 & W2 & 4 \\
+R1 & R2 & W1 & W2 & 3 \\
+R1 & R2 & W2 & W1 & 2 \\
+R2 & W2 & R1 & W1 & 4 \\
+R2 & R1 & W2 & W1 & 2 \\
+R2 & R1 & W1 & W2 & 3 \\
+    \end{tabular}
+  \end{center}
+
+\subsection*{Detecting Data Races Automatically}  
+Dynamic and static tools exist. They can help you find data races in
+your program. {\tt helgrind} is one such tool. It runs your program 
+and analyzes it (and causes a large slowdown).
+
+Run with {\tt valgrind --tool=helgrind <prog>}.
+
+It will warn you of possible data races along with locations. For
+useful debugging information, compile your program with debugging
+information ({\tt -g} flag for {\tt gcc}).
+
+\paragraph{Helgrind Output for Example.}
+\begin{lstlisting}
+==5036== Possible data race during read of size 4 at
+         0x53F2040 by thread #3
+==5036== Locks held: none
+==5036==    at 0x400710: run2 (in datarace.c:14)
+...
+==5036== 
+==5036== This conflicts with a previous write of size 4 by
+         thread #2
+==5036== Locks held: none
+==5036==    at 0x400700: run1 (in datarace.c:8)
+...
+==5036== 
+==5036== Address 0x53F2040 is 0 bytes inside a block of size
+         4 alloc'd
+...
+==5036==    by 0x4005AE: main (in datarace.c:19)
+\end{lstlisting}
+
+\vspace*{-3em}
+\section*{Synchronization}
+You'll need some sort of synchronization to get sane results from
+multithreaded programs. We'll start by talking about how to use
+mutual exclusion in Pthreads.
+
+\vspace*{-3em}
+\paragraph{Mutual Exclusion.} Mutexes are the most basic type of synchronization.
+As a reminder:
+    \begin{itemize}
+    \item Only one thread can access code protected by a mutex at a time.
+    \item All other threads must wait until the mutex is free before they can
+      execute the protected code.
+    \end{itemize}
+
+    Here's an example of using mutexes:
+    
+    \begin{tabular}{ll}
+      \begin{minipage}{.65\textwidth}
+        {\bf PThreads}
+  \begin{lstlisting}
+pthread_mutex_t m1_static = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t m2_dynamic;
+
+pthread_mutex_init(&m2_dynamic, NULL);
+...
+pthread_mutex_destroy(&m1_static);
+pthread_mutex_destroy(&m2_dynamic);
+  \end{lstlisting}
+      \end{minipage}
+      \begin{minipage}{.35\textwidth}
+        {\bf C++11}
+  \begin{lstlisting}[language=C++]
+mutex m1;
+mutex * m2;
+
+m2 = new mutex();
+// ...
+
+delete (m2);
+  \end{lstlisting}
+      \end{minipage}
+    \end{tabular}
+
+You can initialize mutexes statically (as with {\tt m1\_static}) or
+dynamically ({\tt m2\_dynamic}). If you want to include attributes,
+you need to use the dynamic version.
+
+\paragraph{Mutex Attributes.} Both threads and mutexes use the notion of attributes.
+We won't talk about mutex attributes in any detail, but here are the three standard ones.
+  \begin{itemize}
+    \item {\bf Protocol}: specifies the protocol used to prevent priority
+      inversions for a mutex.
+    \item {\bf Prioceiling}: specifies the priority ceiling of a mutex.
+    \item {\bf Process-shared}: specifies the process sharing of a mutex.
+  \end{itemize}
+  You can specify a mutex as {\it process shared} so that you can access it
+  between processes. In that case, you need to use shared memory and {\tt mmap},
+  which we won't get into.
+
+  \paragraph{Mutex Example.} Let's see how this looks in practice. It is fairly simple:
+  
+    \begin{tabular}{ll}
+      \begin{minipage}{.5\textwidth}
+        {\bf PThreads}
+  \begin{lstlisting}
+// code
+pthread_mutex_lock(&m1);
+// protected code
+pthread_mutex_unlock(&m1);
+// more code
+  \end{lstlisting}
+      \end{minipage}&
+      \begin{minipage}{.35\textwidth}
+        {\bf C++11 Threads}
+  \begin{lstlisting}
+// code
+m1.lock();
+// protected code
+m1.unlock();
+// more code
+  \end{lstlisting}
+      \end{minipage}
+    \end{tabular}
+  \begin{itemize}
+    \item Everything within the {\tt lock} and {\tt unlock} is protected.
+    \item Be careful to avoid deadlocks if you are using multiple mutexes (always
+acquire locks in the same order across threads).
+    \item Another useful primitive is {\tt pthread\_mutex\_trylock}. We may come back to this
+later.
+  \end{itemize}
+
+  \subsection*{Data Races}
+  \vspace*{-1em}
+Why are we bothering with locks? Data races. A data race occurs when
+two concurrent actions access the same variable and at least one of
+them is a {\bf write}. (This shows up on Assignment 1!)
+
+  \begin{lstlisting}
+static int counter = 0;
+
+void* run(void* arg) {
+    for (int i = 0; i < 100; ++i) {
+        ++counter;
+    }
+}
+
+int main(int argc, char *argv[]) {
+    // Create 8 threads
+    // Join 8 threads
+    printf("counter = %i\n", counter);
+}
+  \end{lstlisting}
+
+Is there a datarace in this example? If so, how would we fix it?
+
+\paragraph{Solution: use mutexes.}~
+
+  \begin{lstlisting}[escapechar=!]
+!\bf{static pthread\_mutex\_t mutex = PTHREAD\_MUTEX\_INITIALIZER;}!
+static int counter = 0;
+
+void* run(void* arg) {
+    for (int i = 0; i < 100; ++i) {
+        !\bf{pthread\_mutex\_lock(\&mutex);}!
+        ++counter;
+        !\bf{pthread\_mutex\_unlock(\&mutex);}!
+    }
+}
+
+int main(int argc, char *argv[]) {
+    // Create 8 threads
+    // Join 8 threads
+    !\bf{pthread\_mutex\_destroy(\&mutex);}!
+    printf("counter = %i\n", counter);
+}
+  \end{lstlisting}
+
+\end{document}

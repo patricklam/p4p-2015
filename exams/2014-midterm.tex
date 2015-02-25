@@ -1,0 +1,152 @@
+\documentclass[12pt]{article}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{fullpage}
+\usepackage{tikz}
+\usepackage{enumerate}
+\usetikzlibrary{shapes,arrows,calc,automata}
+
+\begin{document}
+
+\title{Programming for Performance (ECE459): Midterm}
+\author{}
+\renewcommand{\today}{}
+\maketitle
+
+ ~\\[-8em]
+
+\begin{center}
+{\Large February 26, 2014}
+\end{center}
+
+This open-book midterm has 3 pages and 4 questions, worth 25 points each. Answer
+the questions in your answer book. You may consult any printed
+material (books, notes, etc).
+
+\section{Short Answer}
+
+Answer these questions using at most three sentences. Each question is worth
+2.5 points.
+
+\begin{enumerate}[(a)]
+\item What can the compiler assume about a {\tt restrict}-qualified pointer?
+\item Write down a Write-after-Write dependency. Rewrite your code, eliminating the write-after-write dependency. (You may, of course, introduce a different dependency).
+\item You are running a simple web server on an otherwise-unloaded 8-core machine. The web server works as follows: when a main thread accepts a connection, it dispatches a thread from a thread pool to respond to the request. Do you expect better throughput from a pool with 8 or 9 threads? Why? (Be explicit with your assumptions.)
+\item OpenMP will not parallelize this loop properly. Propose an equivalent for loop which will
+parallelize.
+
+\hspace*{1in}\begin{minipage}{.5\textwidth}\begin{lstlisting}[language=C,numbers=left,numberstyle=\tiny]
+  double * array = malloc(sizeof(double) * 20);
+  for (double d = 0.0; d < 10.0; d += 0.5) {
+    array[(int)(d*2)] = sin(d);
+  }
+\end{lstlisting}
+\end{minipage}
+\item Will you ever get a race condition from converting an OpenMP shared variable into a private variable? Why or why not? 
+\item Gustafson's Law differs from Amdahl's Law because it allows what to vary?
+\item What is one problem with keeping a bunch of joinable threads around indefinitely?
+\item Say you have 300,000 potentially-active incoming connections open, but only 5 of them 
+are ever active at once. Would threads or nonblocking I/O be better? Why?
+\item Which parallelization pattern most closely corresponds to a bank of subway turnstiles all
+controlling access to the subway in parallel?
+\item Give an example where you would use OpenMP tasks rather than sections. Explain why 
+sections don't work in that case.
+\end{enumerate}
+
+\section{Locking}
+Louis Reasoner is working on the following tree implementation.
+\begin{lstlisting}[language=C,numbers=left,numberstyle=\tiny]
+struct node
+{
+  struct node * left, * right;
+  int key; 
+  int * data;
+};
+
+struct node * root;
+
+int find_and_increment(int key)
+{
+  pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
+
+  struct node * n = root;
+  pthread_mutex_lock(&global_lock);
+  while (n != NULL) {
+    if (key == n->key) {
+      *n->data++;
+      pthread_mutex_unlock(&global_lock);
+      return *n->data;
+    }
+    if (key < n->key)
+      n = n->left;
+    else if (key > n->key)
+      n = n->right;
+  }
+  pthread_mutex_unlock(&global_lock);
+  return NULL;
+}
+\end{lstlisting}
+
+\noindent
+(a, 5 points) This code does not actually lock accesses to the tree. Why not? 
+Propose a fix which properly locks accesses to the tree.\\[1em]
+(b, 20 points) Make the following assumptions: (i) the {\tt data} pointers may be shared among nodes and
+may be changed (as we see in the example); (ii) the structure of the tree ({\tt key}, {\tt left} and {\tt right} fields) 
+never changes
+after the tree is initialized. Now, propose changes to {\tt struct node} and {\tt find\_and\_increment} which permit
+two threads to concurrently call the function, while avoiding races on the {\tt data} fields. Explain why your changes are correct.
+
+\newpage
+\section{Reductions}
+
+If you ask a compiler to parallelize the following loop, it will tell you that it found a reduction.
+\begin{lstlisting}[language=C,numbers=left,numberstyle=\tiny]
+  double sum(double[] array, int N) {
+    double accum = 0.0;
+    for (int i = 0; i < N; i++)
+      accum += array[i];
+    return accum;
+  }
+\end{lstlisting}
+
+Assume that there is a {\tt NUM\_THREADS} constant. You have to use that number
+of threads (part a) or tasks (part b). For simplicity, assume that \verb+N % NUM_THREADS == 0+.\\
+
+\noindent (a, 10 points) Rewrite this loop using {\tt pthread} primitives to implement the reduction.\\
+(Casting {\tt int} to and from {\tt void *} is OK here.)\\[1em]
+\noindent (b, 10 points) Rewrite this loop using OpenMP directives (no reduction). 
+\\[1em]
+(c, 5 points) Describe the source of overheads for autoparallelized reduction and one of
+pthreads/OpenMP. As the array gets larger, which implementation is fastest?
+
+\section{Dependences and parallelization}
+
+Consider these two code fragments.
+{\small 
+\begin{lstlisting}[language=C,numbers=left,basicstyle=\ttfamily\scriptsize,numberstyle=\tiny]
+void methodA(double * x, double * y) {
+  for (int i = 0; i < 101; ++i)
+    for (int j = 0; j < 100; ++j)
+      x[j] = y[i+1];
+}
+\end{lstlisting}
+} 
+
+{\small 
+\begin{lstlisting}[language=C,numbers=left,basicstyle=\ttfamily\scriptsize,numberstyle=\tiny]
+void methodB(double * x) {
+  for (int i = 0; i < 1000; ++i)
+    for (int j = 0; j < 100; ++j)
+      x[j] += j;
+}
+\end{lstlisting}
+} 
+
+For each of these code fragments:\\[1em]
+\noindent
+(a, 2.5 points) Describe the dependency in the code fragment. Be specific.\\[1em]
+(b, 10 points) Will a compiler auto-parallelize this loop fragment? Why or why not? 
+If the answer is ``no'', propose transformations which will allow the loop fragment
+to be auto-parallelized. \\[1em]
+
+\end{document}

@@ -1,34 +1,33 @@
-// ECE 459 Lecture 5 live coding
+// ECE 459 Lecture 6 live coding
 
 // Determine max # of threads.
-// Courtesy David Hu.
+// Courtesy Sanjay Menakuru
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 
-#define MAX_ITERATIONS 100000
+#define NUM_THREADS 100000L
 
-int dummy_thread_func() {
+void *fn(void *arg) {
     sleep(1);
+    return arg;
 }
 
 int main() {
-	int i = 0;
-	int j;
-	pthread_t thread_ids[MAX_ITERATIONS];
+    pthread_t tids[NUM_THREADS] = {0};
 
-	for (; i < MAX_ITERATIONS; i++) {
-		int status = pthread_create(&thread_ids[i], NULL, &dummy_thread_func, NULL);
-		
-		if (status) {
-			printf("Stopped at iteration %d\n", i);
-			exit(1);
-		}
-	}
+    for (int i = 0; i < NUM_THREADS; ++i) {
+        int res = pthread_create(&tids[i], 0, fn, 0);
+        if (res) {
+            printf("Got error on iteration %d: err=%d\n", i,  res);
+            return 1;
+        }
+    }
 
-	for (j = 0; j < MAX_ITERATIONS; j++) {
-		pthread_join(thread_ids[j], NULL);
-	}
- 
-	return 0;
+    for (int i = 0; i < NUM_THREADS; ++i) {
+        pthread_join(tids[i], NULL);
+    }
+
+    return 0;
 }

@@ -1,0 +1,19 @@
+a. mpi_send/mpi_recv/mpi_put/mpi_get/others
+b. throughput/bandwidth
+c. cache misses/waiting on memory
+d. work items
+e. problem size
+f. dependencies/aliasing/linked data structures/see me for others
+g,h. avoid overhead/guarantee safety
+i. stores (across the fence)
+j. dynamic scheduling
+k. system-wide/sampling-based
+l. create an instrumented binary/run the binary on a representative test suite/ run the compiler again with the profiling output
+m. combine runs on local nodes before communication occurs
+n. locks
+o. renaming
+p. profile
+q. parallelism (not concurrency)
+r. acquire it mulitple times in the same thread
+s. client-server
+t. kernel

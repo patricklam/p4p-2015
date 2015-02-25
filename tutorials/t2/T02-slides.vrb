@@ -1,0 +1,22 @@
+\frametitle{Edge v.s. Level-Triggered}
+    \hspace*{2em} \begin{minipage}{.8\textwidth}
+   We mentioned that epoll tracks state changes of FDs,\\
+   epoll could work under two modes,
+   \begin{itemize}
+   \item Edge-Triggered {\scriptsize notify only when an FD changes from not ready to ready}\\
+   {\footnotesize e.g., won't notify again if you don't empty the buffer first }
+   \item Level-Triggered {\scriptsize notify whenever an FD is ready}\\
+   {\footnotesize e.g., will always notify if there is data in the buffer }
+   \end{itemize}
+
+   epoll works under LT mode by default,\\this is how you could change it to ET,
+   \begin{lstlisting}[language=C++,basicstyle=\ttfamily\footnotesize,commentstyle=\color{commgreen},keywordstyle=\color{blue},breaklines=true]
+    struct epoll_event ev;
+    ev.events = EPOLLIN | EPOLLET;
+    ev.data.fd = sockfd;
+    if( epoll_ctl(epfd, EPOLL_CTL_ADD, sockfd, &ev) < 0 ){
+        /* handle epoll_ctl error here */
+    }
+   \end{lstlisting}
+
+   \end{minipage}

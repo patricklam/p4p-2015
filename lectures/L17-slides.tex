@@ -1,0 +1,566 @@
+\documentclass[aspectratio=43]{beamer}
+
+% Text packages to stop warnings
+\usepackage{lmodern}
+\usepackage{textcomp}
+\usepackage{listings}
+\usepackage{multirow}
+\usepackage{tikz}
+
+\usetikzlibrary{arrows,automata,shapes,positioning}
+\tikzstyle{block} = [rectangle, draw, fill=blue!20, 
+    text width=2.5em, text centered, rounded corners, minimum height=2em]
+\tikzstyle{bw} = [rectangle, draw, fill=blue!20, 
+    text width=3.5em, text centered, rounded corners, minimum height=2em]
+
+% Themes
+\usetheme{Boadilla}
+\setbeamertemplate{footline}[page number]{}
+\setbeamertemplate{navigation symbols}{}
+
+% Suppress the navigation bar
+\beamertemplatenavigationsymbolsempty
+
+\lstset{basicstyle=\scriptsize, frame=single}
+
+\newenvironment{changemargin}[1]{% 
+  \begin{list}{}{% 
+    \setlength{\topsep}{0pt}% 
+    \setlength{\leftmargin}{#1}% 
+    \setlength{\rightmargin}{1em}
+    \setlength{\listparindent}{\parindent}% 
+    \setlength{\itemindent}{\parindent}% 
+    \setlength{\parsep}{\parskip}% 
+  }% 
+  \item[]}{\end{list}} 
+
+\title{Lecture 17---Automatic Parallelization, OpenMP}
+\subtitle{ECE 459: Programming for Performance}
+\date{February 11, 2015}
+
+\begin{document}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Road Map}
+
+  \begin{changemargin}{1cm}
+    \begin{itemize}
+    \item Now: compilers \& automatic parallelization (when)
+    \item Later today: under the hood\\
+      \hspace*{2cm}(OpenMP: how compilers parallelize)
+    \end{itemize}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[containsverbatim]
+  \frametitle{Lingering Questions about Runtimes}
+
+  \begin{changemargin}{1.5cm}
+    What happened here?\\[1em]
+  \end{changemargin}
+    \begin{tabular}{ll}
+      \begin{minipage}{5em} --- --- --- ---\\[-.8em] --- --- --- ---\\[-.8em] --- --- --- --- \end{minipage}& horizontal good: \\
+      & \qquad create 4 threads to do 1000 iterations on sub-arrays.\\
+      \begin{minipage}{5em} --- --- --- ---\\[-.8em] --- --- --- ---\\[-.8em] --- --- --- --- \end{minipage}& horizontal bad: \\
+      & \qquad 1000 times, create 4 threads to iterate on sub-array. \\
+      $ \mid \mid \mid\mid \: \mid \mid \mid \mid \: \mid \mid \mid \mid\: \mid \mid \mid \mid$& vertical:\\
+      & \qquad create 4 threads, handle 1 element at a time.\\[1em]
+    \end{tabular}
+    \begin{changemargin}{1.5cm}
+      
+      Last year, {\tt perf -r 5} gave following task-clocks (in seconds):\\[1em]
+
+      \begin{center}
+      \begin{tabular}{lrrrr}
+        & H good & H bad & V & auto \\
+        gcc, no opt & 2.794 & 2.953 & 2.799\\
+        gcc, -O3 & 0.588 & 1.490 & 0.980\\
+        solaris, no opt & 3.175 & 3.291 & 2.966 \\
+        solaris, -xO4 & 0.494 & 1.453 & 2.739 & 0.688\\
+      \end{tabular}
+      \end{center}
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[containsverbatim]
+  \frametitle{Runtimes---Why?}
+
+  \begin{changemargin}{1.5cm}
+    Observations:\\[1em]
+    \begin{itemize}
+    \item Good runs had 5 to 7 cpu-migrations; bad had 4000.
+    \item \# cycles varied from 2B to 9.7B (no opt).\\
+    \item Branch misses varied from 8k to 208k.
+    \end{itemize}
+  \end{changemargin}
+    
+
+    
+%%     gcc plain, bad: 4,004 cpu-migrations; 5.2B cycles; 75\% frontend cycles idle; 1B branches; 167k branch misses
+%% gcc -O3, bad: 4,003 cpu-migrations; 4.2B cycles; 80\% frontend cycles idle; 466k branches; 208k branch misses
+%% gcc plain, good: 5 cpu-migrations; 9.6B cycles; 39\% frontend cycles idle; 1B branches; 13k branch misses
+%% gcc -O3, good: 7 cpu-migrations; 2B cycles; 49\% frontend cycles idle; 525k branches; 8k branch misses
+
+%% gcc plain, V: 5 cpu-migrations; 9.7B cycles; 44\% frontend cycles idle; 1B branches; 1M branch misses
+%% gcc -O3, V: 7 cpu-migrations; 3.3B cycles; 69\% frontend cycles idle; 1B branches; 1M branch misses
+
+%% solaris auto: 0.688s; 3 cpu-migrations; 2.4B cycles; 72\% frontend cycles idle; 134M branches; 30k branch misses
+        
+    
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Reductions}
+
+\begin{changemargin}{2.5cm}
+  \begin{itemize}
+    \item Reductions combine input data into a smaller (summary) set.
+    \item We'll see a more complete definition when we touch on functional
+      programming.
+    \item Simplest instance: computing the sum of an array.
+  \end{itemize}
+~\\
+
+  Consider the following code:
+
+  \begin{lstlisting}
+double sum (double *array, int length)
+{
+  double total = 0;
+
+  for (int i = 0; i < length; i++)
+    total += array[i];
+  return total;
+}
+  \end{lstlisting}
+
+  Can we parallelize this? 
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Reduction Problems}
+
+\begin{changemargin}{1cm}
+  Barriers to parallelization:
+  \begin{enumerate}
+    \item value of {\tt total} depends on previous
+      iterations;
+    \item addition is actually non-associative for floating-point values
+      \\ (is this a problem?)
+  \end{enumerate}
+  ~\\[1em]
+  \begin{center}
+    Recall that ``associative'' means: 
+     \[a + (b + c) = (a + b) + c.\]
+  \end{center}
+    \only<2-> In this case, the program probably isn't sensitive to rounding,
+      but you should always consider if an operation is associative.
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Automatic Parallelization via Reduction}
+
+\begin{changemargin}{1.5cm}
+  If we compile the program with {\tt solarisstudio} and add the flag
+  {\tt -xreduction}, it will parallelize the code:
+\end{changemargin}
+
+  \begin{lstlisting}
+% solarisstudio-cc -xautopar -xloopinfo -xreduction -O3 -c sum.c 
+"sum.c", line 5: PARALLELIZED, reduction, and serial version
+  generated
+  \end{lstlisting}
+~\\[1em]
+
+\begin{changemargin}{1.5cm}
+  {\bf Note:} If we try to do the reduction on {\tt fploop.c} with {\tt restrict}s added, we'll get the following:
+\end{changemargin}
+
+  \begin{lstlisting}
+% solarisstudio-cc -O3 -xautopar -xloopinfo  -xreduction -c fploop.c
+"fploop.c", line 5: PARALLELIZED, and serial version generated
+"fploop.c", line 8: not parallelized, not profitable
+  \end{lstlisting}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Dealing with Function Calls}
+
+\begin{changemargin}{1.5cm}  
+  \begin{itemize}
+    \item A general function could have arbitary side effects.
+    \item Production compilers tend to avoid parallelizing any loops with
+      function calls.
+  \end{itemize}
+~\\[1em]
+
+  Some built-in functions, like {\tt sin()}, are ``pure'', have no side
+  effects, and are safe to parallelize.
+~\\[1em]
+  {\bf Note:} this is why functional languages are nice for parallel
+  programming: impurity is visible in type signatures.
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Dealing with Function Calls in {\tt solarisstudio}}
+
+\begin{changemargin}{1.5cm}  
+  \begin{itemize}
+    \item For {\tt solarisstudio} you can use the {\tt -xbuiltin} flag to make
+      the compiler use its whitelist of ``pure'' functions.
+    \item The compiler can then parallelize a loop which uses {\tt sin()}
+      (you shouldn't replace built-in functions with your own if you use this
+      option).
+  \end{itemize}
+  \vfill
+  Other options which may work:
+  
+  \begin{enumerate}
+    \item Crank up the optimization level ({\tt -xO4}).
+    \item Explicitly tell the compiler to inline certain functions ({\tt
+      -xinline=}, or use the {\tt inline} keyword).
+  \end{enumerate}
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Summary of Automatic Parallelization}
+
+\begin{changemargin}{1.5cm}  
+To help the compiler, we can:
+\begin{itemize}
+\item use {\tt restrict} (make a {\tt restrict}ed copy); and,
+\item make sure that loop bounds are constant (temporary
+variables). 
+\end{itemize}
+~\\
+Some compilers automatically create different versions
+for the alias-free case and the (parallelized) aliased case.\\[1em]
+
+At runtime, the program runs the aliased case if correct.
+\end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\part{OpenMP}
+\frame{\partpage}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[containsverbatim]
+  \frametitle{Context for OpenMP}
+
+  \begin{changemargin}{2.5cm}
+    So far: Pthreads and automatic parallelization.\\[1em]
+    Next: ``Manual'' parallelization using OpenMP.
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[containsverbatim]
+  \frametitle{What is OpenMP?}
+
+  \begin{changemargin}{2.5cm}
+    OpenMP = Open Multiprocessing.\\[2em]
+    You specify parallelization; compiler implements.\\[1em]
+    All major compilers have OpenMP \\
+    \qquad (GNU, Solaris,
+      Intel, Microsoft).\\[1em]
+
+  Use OpenMP\footnote{More information:
+    \url{https://computing.llnl.gov/tutorials/openMP/}} by specifying
+  directives in the source. \\[1em]
+  C/C++: pragmas of the
+  form \verb+#pragma omp ...+
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Benefits of OpenMP}
+
+\large
+  \begin{changemargin}{2cm}
+  \begin{itemize}
+    \item uses compiler directives---
+      \begin{itemize}
+        \item easily compile same codebase for serial or parallel.
+      \end{itemize}
+    \item separates the parallelization implementation\\
+      from the algorithm implementation.
+   \end{itemize}~\\[0.5em]
+
+    Directives apply to limited parts of the code, \\
+    enabling incremental parallelization of the program.\\
+    (Start with the hotspots.)
+  \end{changemargin}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Simple OpenMP Example}
+
+  \begin{changemargin}{1.5cm}
+  \begin{lstlisting}[language=C]
+void calc (double *array1, double *array2, int length) {
+    #pragma omp parallel for
+    for (int i = 0; i < length; i++) {
+        array1[i] += array2[i];
+    }
+}
+  \end{lstlisting}
+
+\Large
+  Without OpenMP: \\ \quad Could compiler parallelize this automatically?
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[containsverbatim]
+  \frametitle{How The Example Works}
+
+\large
+  \begin{changemargin}{1.5cm}
+    \item \verb+#pragma+ will make the compiler parallelize the loop.
+
+  \begin{itemize}
+    \item It does not look at loop contents, only loop bounds.
+    \item \alert{It is your responsibility to make sure the code is safe.}
+  \end{itemize}
+  \vfill
+  OpenMP will always start parallel threads if you tell it to, dividing
+  iterations contiguously among the threads.\\[1em]
+
+  You don't need to declare {\tt restrict}, but it's a good idea.\\
+  Need {\tt restrict} for auto-parallelization (non-OpenMP).
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[containsverbatim]
+  \frametitle{Basic {\tt pragma} syntax}
+
+  \begin{changemargin}{2cm}
+  Let's look at the parts of this \verb+#pragma+.\\[1em]
+
+  \begin{itemize}
+    \item \verb+#pragma omp+ indicates an OpenMP directive;
+    \vfill
+    \item {\tt parallel} indicates the start of a parallel region.
+    \vfill
+    \item {\tt for} tells OpenMP: run the next {\tt for} loop in parallel.
+  \end{itemize}
+  ~\\[1em]
+
+  When you run the parallelized program, \\ the runtime library starts
+  a number of threads \& \\  assigns a subrange of the range to 
+  each of the threads.
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{What OpenMP can Parallelize}
+
+  \begin{changemargin}{1.5cm}
+\begin{verbatim}
+    for (int i = 0; i < length; i++) { ... }
+\end{verbatim}~\\[1em]
+
+    Can only parallelize loops which satisfy these conditions:
+\begin{itemize}
+\item must be of the form:\\{\tt ~~for (init expr; test expr; increment expr)};
+\item loop variable must be integer (signed or unsigned), pointer, or a C++
+random access iterator;
+\item loop variable must be initialized to one end of the range;
+\item loop increment amount must be loop-invariant (constant with respect to the loop body); and
+\item test expression must be one of {\tt >}, {\tt >=}, {\tt <}, or {\tt <=}, and the comparison value (bound) must be loop-invariant.
+\end{itemize}
+
+{\bf Note:} these restrictions therefore also apply to automatically parallelized
+loops.
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[containsverbatim]
+  \frametitle{What OpenMP Does}
+
+  \begin{changemargin}{2cm}
+  \begin{itemize}
+    \item Compiler generates code to spawn a \structure{team}
+of threads; automatically splits off worker-thread code into a
+separate procedure.
+    \item Generated code uses {\tt fork-join} parallelism; when the
+master thread hits a parallel region, it gives work to the worker
+threads, which execute and report back.
+    \item Afterwards, the master thread
+continues running, while the worker threads wait for more work .
+  \end{itemize}
+
+~\\
+As we saw, you can specify the number of threads by setting the
+\verb+OMP_NUM_THREADS+ environment variable. (You can also adjust by calling 
+\verb+omp_set_num_threads()+).
+
+\begin{itemize}
+  \item Solaris compiler tells you what it did if you use the flags \verb+-xopenmp -xloopinfo+, or \verb+er_src+.
+\end{itemize}
+
+  \end{changemargin}
+
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Variable Scoping}
+
+  \begin{changemargin}{1.5cm}
+
+  Concept: thread-local variables (\structure{private})
+      vs shared~variables.
+  \begin{itemize}
+    \item Writes to private variables:\\
+\qquad visible only to writing thread.
+    \item Writes to shared variables:\\ 
+\qquad visible to all threads.
+  \end{itemize}
+
+  \end{changemargin}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Variable Scoping for Example}
+
+  \begin{changemargin}{2cm}
+
+\begin{verbatim}
+    for (int i = 0; i < length; i++) { ... }
+\end{verbatim}
+
+\large
+  \begin{itemize}
+    \item {\tt length} could be either shared or private.
+    \begin{itemize}
+      \item if it was private, then you would have to copy
+in the appropriate initial value.
+    \end{itemize}
+    \item {\tt array} variables must be shared.
+  \end{itemize}
+  \end{changemargin}
+
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Default Variable Scoping}
+  \begin{changemargin}{2cm}
+Let's look at the defaults that OpenMP uses to parallelize the {\tt parallel-for} code:
+\begin{lstlisting}
+% er_src parallel-for.o
+     1.   <Function: calc>
+    
+    Source OpenMP region below has tag R1
+    Private variables in R1: i
+    Shared variables in R1: array2, length, array1
+     2.     #pragma omp parallel for
+\end{lstlisting}
+  \end{changemargin}
+
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Parallelization information (via OpenMP)}
+\begin{lstlisting}
+    Source loop below has tag L1
+    L1 autoparallelized
+    L1 parallelized by explicit user directive
+    L1 parallel loop-body code placed in function _$d1A2.calc 
+                     along with 0 inner loops
+    L1 multi-versioned for loop-improvement:
+                     dynamic-alias-disambiguation. 
+        Specialized version is L2
+     3.     for (int i = 0; i < length; i++) {
+     4.       array1[i] += array2[i];
+     5.     }
+     6.   }
+\end{lstlisting}
+
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Default Variable Scoping Rules: A Summary}
+
+  \begin{changemargin}{1.8cm}
+\begin{itemize}
+  \item Loop variables are private.
+  \item Variables defined in parallel code are private.
+  \item Variables defined outside the parallel region are shared.
+\end{itemize}
+~\\
+
+You can disable the default rules \\
+by specifying {\tt default(none)} on the {\tt parallel} pragma, \\
+or you can give explicit scoping:
+
+\begin{lstlisting}
+#pragma omp parallel for private(i) 
+                         shared(length, array1, array2)
+\end{lstlisting}
+  \end{changemargin}
+
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\end{document}

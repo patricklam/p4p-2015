@@ -1,0 +1,268 @@
+*Question 1*
+
+In general, 1 mark for the answer, 1.5 for the justification.
+When a question is of the form "A or B", don't answer with "Yes!"
+
+a) if p is a restrict pointer, then when p is in scope, 
+the program will not use any other pointer q to access the
+data at *p.
+
+b) x = i + 7; x = i + 42; => x_copy = i + 7; x = i + 42;
+
+[Jon was a bit picky about constant-foldable examples.]
+
+c) either will work depending on your assumption. If you assume
+that the process is CPU-bound, then 8 threads is faster.
+If you assume that the process is IO-bound, then 9 threads is faster.
+
+d) change the double to int. Not technically equivalent, but close enough.
+
+double * array = malloc(sizeof(double) * 20);
+double d = 0.0;
+for (int i = 0; i < 20; i ++) {
+  array[i] = sin(d);
+  d += 0.5;
+}
+
+You lost half a mark for doing an integer truncation without cast,
+like array[i] = sin(i/2) instead of sin((double)i/2) or even /2.0.
+
+e) No: that conversion would make fewer memory locations visible to
+multiple threads, reducing the number of possible races. Of course, the
+program may produce unexpected results.
+
+f) problem size
+
+g) consumes extra resources, e.g. stacks and return value
+
+[not deadlock!]
+
+h) non-blocking I/O; there is a max number of threads, and they consume
+resources. A thread pool of 5 threads is fine too.
+
+i) multiple copies of the same task
+
+j) anything where you don't know how many tasks you need to run
+at compile-time; for example, web servers. Sections only allow a
+statically-bounded number of tasks.
+
+
+*Question 2*
+
+a) global_lock is a local variable and each call to that method gets
+its own private lock. to fix: either make the variable static, or else
+make it actually global
+
+b) This question was harder than intended due to the sharing of data
+pointers.  Acceptable solutions include 1) modifying the type "int *
+data" to an elem structure with a pthread lock and a data; 2) include
+a pthread lock directly in the struct node; or 3) maintaining a hash
+table or array connecting the data pointer to the lock.
+
+Option (2) requires you to state the additional assumption that the
+data and lock must be kept in synch. If you took Option 1, then we
+gave full marks for:
+
+  struct elem { int data; pthread_mutex_t lock; }
+
+and keeping a struct elem * in the node. We did not give full marks for
+
+  struct elem { int * data; pthread_mutex_t lock; }
+
+as you are probably going to run into aliasing issues.
+
+Solution:
+
+struct node
+{
+        struct node *left, *right;
+        int key;
+        int * data;
++       pthread_mutex_t lock;
+};
+
+// move around the location of the lock
+int find_and_increment(int key)
+{
+    struct node * n = root;
+    while (n != NULL) {
+        if (key == n->key) {
++           pthread_mutex_lock(&n->lock);
++           (*n->data)++;
++           int d = *n->data;
++           pthread_mutex_unlock(&n->lock);
+            return d;
+        }
+        if (key < n->key) 
+            n = n->left;
+        else if (key > n->key)
+            n = n->right;
+    }
+    return -1;
+}
+
+There shouldn't be extra syntax issues with Options 1 and 2.
+Option 3 solutions should look like code, although we won't be
+too picky on syntax.
+
+
+*Question 3*
+
+The idea behind a reduction is to create subarrays, each with a
+private sum, and then to sum the subarrays. It's OK to make array
+global here.
+
+a) Marking scheme: 4 points for starting threads; 4 points for
+computing subsums; 2 points for adding subsums.
+
+I considered using a global lock to defeat the purpose of the exercise
+and gave you 5/10.
+
+struct args
+{
+  int start, count;
+  int thread_num;
+  double subsum;
+};
+
+void * subsum(void * a)
+{
+  struct args * arg = (struct args *)a;
+  int thread_num = arg->thread_num;
+  // I checked for something like this...
+  for (int i = arg->start; i < arg->count; i++)
+  {
+    arg->subsums += array[i];
+  }
+  return NULL;
+}
+
+double sum(double* array, int N)
+{
+  struct args a[NUM_THREADS];
+  pthread_t tids[NUM_THREADS];
+  double retval;
+  
+  for (int i = 0; i < NUM_THREADS; i++)
+  {
+    a[i].thread_num = i;
+    a[i].start = N / NUM_THREADS * i; // didn't care about off-by-one
+    a[i].count = N / NUM_THREADS;
+    // ... and this ...
+    pthread_create(&tids[i], NULL, subsum, &a[i]);
+  }
+
+  for (int i = 0; i < NUM_THREADS; i++)
+  {
+    pthread_join(tids[i], NULL);
+    // ... and this ...
+    retval += a[i].subsum;
+  }
+  return retval;
+}
+
+(b) A number of people didn't see "no reduction". Perhaps I should have
+bolded it. I think the easiest way to do this was using tasks. It's
+quite analogous to part (a).
+
+I was also pretty harsh when people used a shared sum variable.
+Shared means that all of the threads can see it. It does *not* ensure
+that the accesses are uncontended. Flushing does not help.  Atomic
+updates would be correct but also slow, so I didn't like
+that. Instead, you were supposed to use subsums here also.
+
+double subsums[NUM_THREADS];
+
+double sum(double* array, int N)
+{
+  double retval;
+  
+  for (int i = 0; i < NUM_THREADS; i++)
+  {
+    #pragma omp task shared(i, N)
+    {
+      for (int j = N / NUM_THREADS * i; j < N / NUM_THREADS * (i+1); j++)
+        subsums[i] += array[j];
+    }
+  }
+  #pragma omp taskwait
+
+  for (int i = 0; i < NUM_THREADS; i++)
+  {
+    retval += subsums[i];
+  }
+  return retval;
+}
+
+(c) It seemed unclear to a number of students that autoparallelized
+reduction generates OpenMP primitives (parallel for, not tasks).
+It's not magic. All of the possibilities require the machine to start
+up some number of threads. Since no one had a thread pool implementation,
+we don't get to keep the threads around, so there is always thread
+startup overhead for pthreads. OpenMP tasks seem to be relatively
+heavyweight to spin up.
+
+As for "which implementation is fastest", that would depend on the
+assumptions that you documented. The times should be broadly
+comparable. (If you were calling sum a number of times and if
+NUM_THREADS was very large, then OpenMP could be faster by reusing
+threads).
+
+
+*Question 4*
+
+method A:
+
+(a) As I mentioned in class, this is really not what I meant to
+write. But what I did write is the same as:
+
+for (j = 0; j < 100; j++)
+  x[j] = y[102];
+
+except for the write-after-write loop-carried dependency on line 4
+between iterations of the outer loop. So the first write would be x[j]
+:= y[102], and then we write the same value again, x[j] := y[102].
+
+There's also a read-after-write dependency on the loop index variable
+j, which gets written to on line 3 and read on line 4.
+
+There is also a problem with potential aliasing between x and y.
+I allocated 4 marks from this part for saying that you add
+restrict modifiers.
+
+(b)
+
+[(not required:) A sufficiently sophisticated compiler ought to be
+able to transform the loop into what I wrote above.]
+
+However, the write-after-write dependency will prevent
+parallelization. Transforming into the simple loop above will permit
+autoparallelization.  So would interchanging the iteration order and
+putting the j loop outside.
+
+method B:
+
+An infinitely smart compiler could transform this to:
+
+for (int j = 0; j < 100; j++)
+  x[j] += 1000*j;
+
+(a) There is a read-after-write dependency on line 4 between the loop
+iterator value written in line 3 and the value of j both as the array
+access index and the right-hand side of the statement.
+
+For the outer loop, there is also a loop-carried read-after-write
+dependency and write-after-write dependency on line 4: the read is of
+x[j] due to the +=, and the write is of x[j] as well.
+
+(b) The compiler will not auto-parallelize the outer loop as written,
+since there are contending writes to x[j] between different
+iterations.
+
+The inner loop is parallelizable because there are no dependendencies
+preventing parallelization.  Students may (but are not required to)
+mention that the inner loop may not be profitable to parallelize.
+
+The infinitely-smart compiler transformation would work. Changing the
+iteration order is the only other transformation I can think of.
+

@@ -2,6 +2,7 @@
 \usepackage{listings}
 \usepackage{tikz}
 \usepackage{url}
+\usepackage{hyperref}
 %\usepackage{algorithm2e}
 \usetikzlibrary{arrows,automata,shapes,positioning}
 \tikzstyle{block} = [rectangle, draw, fill=blue!20, 
@@ -41,140 +42,262 @@
 \parskip 1.5ex
 %\renewcommand{\baselinestretch}{1.25}
 
+% http://gurmeet.net/2008/09/20/latex-tips-n-tricks-for-conference-papers/
+\newcommand{\squishlist}{
+ \begin{list}{$\bullet$}
+  { \setlength{\itemsep}{0pt}
+     \setlength{\parsep}{3pt}
+     \setlength{\topsep}{3pt}
+     \setlength{\partopsep}{0pt}
+     \setlength{\leftmargin}{1.5em}
+     \setlength{\labelwidth}{1em}
+     \setlength{\labelsep}{0.5em} } }
+\newcommand{\squishlisttwo}{
+ \begin{list}{$\bullet$}
+  { \setlength{\itemsep}{0pt}
+     \setlength{\parsep}{0pt}
+    \setlength{\topsep}{0pt}
+    \setlength{\partopsep}{0pt}
+    \setlength{\leftmargin}{2em}
+    \setlength{\labelwidth}{1.5em}
+    \setlength{\labelsep}{0.5em} } }
+\newcommand{\squishend}{
+  \end{list}  }
+
 \begin{document}
 
-\lecture{6 --- January 15, 2015}{Winter 2015}{Patrick Lam}{version 0}
+\lecture{7 --- January 19, 2015}{Winter 2015}{Patrick Lam}{version 1}
 
-\section*{Synchronization}
-You'll need some sort of synchronization to get sane results from
-multithreaded programs. We'll start by talking about how to use
-mutual exclusion in Pthreads.
+We will describe {\tt epoll} in lecture. It is the most modern and
+flexible interface. Unfortunately, I didn't realize that the obvious
+{\tt curl} interface does not work with {\tt epoll} but instead with
+{\tt select}.  There is different syntax but the ideas are the same.
 
-\paragraph{Mutual Exclusion.} Mutexes are the most basic type of synchronization.
-As a reminder:
+The key idea is to give {\tt epoll} a bunch of file descriptors and
+wait for events to happen. In particular:
+     \begin{itemize}
+       \item create an epoll instance ({\tt epoll\_create1});
+       \item populate it with file descriptors ({\tt epoll\_ctl}); and
+       \item wait for events ({\tt epoll\_wait}).
+     \end{itemize}
+Let's run through these steps in order.
+
+\paragraph{Creating an {\tt epoll} instance.} Just use the API:
+    \begin{lstlisting}
+   int epfd = epoll_create1(0);
+    \end{lstlisting}
+
+The return value {\tt epfd} is typed like a UNIX file
+descriptor---{\tt int}---but doesn't represent any files; instead, use
+it as an identifier, to talk to {\tt epoll}.
+
+The parameter ``{\tt 0}'' represents the flags, but the only available flag
+is {\tt EPOLL\_CLOEXEC}. Not interesting to you.
+
+\paragraph{Populating the {\tt epoll} instance.} Next, you'll want
+{\tt epfd} to do something. The obvious thing is to add some {\tt fd}
+to the set of descriptors watched by {\tt epfd}:
+    \begin{lstlisting}
+   struct epoll_event event;
+   int ret;
+   event.data.fd = fd;
+   event.events = EPOLLIN | EPOLLOUT;
+   ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &event);
+    \end{lstlisting}
+
+You can also use {\tt epoll\_ctl} to modify and delete descriptors from {\tt epfd}; read the manpage to find out how.
+
+\paragraph{Waiting on an {\tt epoll} instance.} Having completed
+the setup, we're ready to wait for events on any file descriptor in {\tt epfd}.
+    \begin{lstlisting}
+  #define MAX_EVENTS 64
+
+  struct epoll_event events[MAX_EVENTS];
+  int nr_events;
+
+  nr_events = epoll_wait(epfd, events, MAX_EVENTS, -1);
+    \end{lstlisting}
+
+The given {\tt -1} parameter means to wait potentially forever;
+otherwise, the parameter indicates the number of milliseconds to wait.
+(It is therefore ``easy'' to sleep for some number of milliseconds by
+starting an {\tt epfd} and using {\tt epoll\_wait}; takes two function
+calls instead of one, but allows sub-second latency.)
+
+Upon return from {\tt epoll\_wait}, we know that we have {\tt
+  nr\_events} events ready.
+
+\subsection*{Level-Triggered and Edge-Triggered Events}
+One relevant concept for these polling APIs is the concept of
+\emph{level-triggered} versus \emph{edge-triggered}.  The default {\tt
+  epoll} behavious is level-triggered: it returns whenever data is
+ready. One can also specify (via {\tt epoll\_ctl}) edge-triggered
+behaviour: return whenever there is a change in readiness.
+
+We did a live coding demo; here are more details. The example was some code
+(see {\tt L07-socket.c} in the code examples) that created a server and
+read from that server in either level-triggered mode or edge-triggered
+mode. 
+
+One would think that level-triggered mode would return from {\tt read}
+whenever data was available, while edge-triggered mode would return
+from {\tt read} whenever new data came in. Level-triggered does behave
+as one would guess: if there is data available, {\tt read()} returns
+the data. However, edge-triggered mode returns whenever the
+state-of-readiness of the socket changes (from no-data-available to
+data-available). Play with it and get a sense for how it works.
+
+Good question to think about: when is it appropriate to choose one or the other?
+
+\subsection*{Asynchronous I/O}
+As mentioned above, the POSIX standard defines {\tt aio} calls.
+Unlike just giving the {\tt O\_NONBLOCK} flag, using {\tt aio} works
+for disk as well as sockets.
+
+\paragraph{Key idea.} You specify the action to occur when I/O is ready:
     \begin{itemize}
-    \item Only one thread can access code protected by a mutex at a time.
-    \item All other threads must wait until the mutex is free before they can
-      execute the protected code.
+      \item nothing;
+      \item start a new thread; or
+      \item raise a signal.
     \end{itemize}
 
-    Here's two examples of using mutexes:
-    {\small
-  \begin{minipage}{.55\textwidth}
-  \begin{lstlisting}
-pthread_mutex_t m1_static = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t m2_dynamic;
+Your code submits the requests using e.g. {\tt aio\_read} and {\tt aio\_write}.
+If needed, wait for I/O to happen using {\tt aio\_suspend}.
 
-pthread_mutex_init(&m2_dynamic, NULL);
-...
-pthread_mutex_destroy(&m1_static);
-pthread_mutex_destroy(&m2_dynamic);
-  \end{lstlisting}
-  \end{minipage}
-  \begin{minipage}{.4\textwidth}
-    \begin{lstlisting}[language=C++]
-#include <mutex>
+\paragraph{Nonblocking I/O with curl.} The next lecture notes give more clue
+about nonblocking I/O with curl. Although it doesn't work with {\tt epoll}
+but rather {\tt select}, it uses the same ideas---we'll therefore see two
+(three, with aio) different implementations of the same idea. 
+Briefly, you:
+\begin{itemize}
+\item build up a set of descriptors;
+\item invoke the transfers and wait for them to finish; and
+\item see how things went.
+\end{itemize}
 
-std::mutex m1, m2;
+\section*{curl\_multi}
+It's important to see at least one specific example of an idea. I talked about
+{\tt epoll} last time and I meant that to be the specific example, but we 
+can't quite use it without getting into socket programming, and I don't want to
+do that. Instead, we'll see non-blocking I/O in the specific example of the curl
+library, which is reasonably widely used in the Linux world.
+
+Tragically, it's complicated to use {\tt epoll} with {\tt curl\_multi}, and I couldn't
+quite figure it out. So I'll describe the {\tt select}-based interface for {\tt curl\_multi}.
+A socket-based interface which works with {\tt epoll} also exists. I won't talk about that.
+
+The relevant steps, in any case, are:
+\squishlist
+\item Create individual requests with {\tt curl\_easy\_init}.
+\item Create a multi-handle with {\tt curl\_multi\_init} and add the requests to it
+with {\tt curl\_multi\_add\_handle}.
+\item (for select-based interface:) put in requests \& wait for results, using {\tt 
+curl\_multi\_perform}. That call generalizes {\tt curl\_easy\_perform}.
+\item Handle completed transfers with {\tt curl\_multi\_info\_read}.
+\squishend
+
+\paragraph{On the use of {\tt curl\_multi\_perform}.} The actual non-blocking read/write
+is done in {\tt curl\_multi\_perform}, which returns the number of still-active handles 
+through its parameter.
+
+You call it in a loop, with a call to {\tt select} above. Call {\tt select} and then
+{\tt curl\_multi\_perform} in a loop while there are still running transfers.
+You're also allowed to manipulate (delete/alter/re-add) a {\tt curl\_easy\_handle} whenever
+a transfer finishes.
+
+\paragraph{Setting up the {\tt select}.} Before you call {\tt curl\_multi\_perform}
+and {\tt select}, you need to set up the {\tt select}. The curl call {\tt curl\_multi\_fdset}
+sets up the parameters for the {\tt select}, while {\tt curl\_multi\_timeout} gives you
+the proper timeout to hand to {\tt select}.
+
+\begin{lstlisting}
+    // zero the fd-sets
+    FD_ZERO(&fdread); FD_ZERO(&fdwrite); FD_ZERO(&fdexcep);
+    // retrieve the fds, check for error
+    curl_multi_fdset(multi_handle, 
+                     &fdread, &fdwrite, &fdexcep, &maxfd);
+    if (maxfd < -1) abort_("multi_fdset: couldn't wait for fds");
+    // retrieve the timeout
+    curl_multi_timeout(multi_handle, &curl_timeout);
 \end{lstlisting}
-  \end{minipage}
-}
 
+In an API infelicity, you have to convert the {\tt curl\_timeout} into a
+{\tt struct timeval} for use by {\tt select}.
 
-You can initialize Pthreads mutexes statically (as with {\tt m1\_static}) or
-dynamically ({\tt m2\_dynamic}). If you want to include attributes,
-you need to use the dynamic version. C++11 mutexes don't need to be explicitly
-destroyed; resources are freed when they go out of scope. They don't seem to have
-attributes.
+\paragraph{Calling {\tt select}.}
+The call itself is fairly straightforward:
+\begin{lstlisting}
+  rc = select(maxfd + 1, &fdread, &fdwrite, &fdexcep, &timeout);
+  if (rc == -1) abort_("[main] select error");
+\end{lstlisting}
+This waits for one of the file descriptors to become ready, or for the
+timeout to elapse (whichever happens first).
 
-\paragraph{Mutex Attributes.} Both threads and mutexes use the notion of attributes.
-We won't talk about mutex attributes in any detail, but here are the three standard Pthreads ones.
-  \begin{itemize}
-    \item {\bf Protocol}: specifies the protocol used to prevent priority
-      inversions for a mutex.
-    \item {\bf Prioceiling}: specifies the priority ceiling of a mutex.
-    \item {\bf Process-shared}: specifies the process sharing of a mutex.
-  \end{itemize}
-  You can specify a mutex as {\it process shared} so that you can access it
-  between processes. In that case, you need to use shared memory and {\tt mmap},
-  which we won't get into.
+Of course, once {\tt select} returns, you only know that something
+happened, but you haven't done the work yet. So you then need to call
+{\tt curl\_multi\_perform} again to do the work.
 
-\paragraph{Mutex Example.} Let's see how this looks in practice. It is fairly simple:
-    {\small
-  \begin{minipage}{.55\textwidth}
-  \begin{lstlisting}
-// code
-pthread_mutex_lock(&m1);
-// protected code
-pthread_mutex_unlock(&m1);
-// more code
-  \end{lstlisting}
-  \end{minipage}
-  \begin{minipage}{.4\textwidth}
-    \begin{lstlisting}[language=C++]
-// code
-m1.lock();
-// protected code
-m1.unlock();
-// more code
-    \end{lstlisting}
-  \end{minipage}
-  }
-  \begin{itemize}
-    \item Everything within the {\tt lock} and {\tt unlock} is protected.
-    \item Be careful to avoid deadlocks if you are using multiple mutexes (always
-acquire locks in the same order across threads).
-    \item Another useful primitive is {\tt pthread\_mutex\_trylock}, also known as {\tt ::try\_lock()} in C++11 threads. We may come back to this
-later.
-  \end{itemize}
+Finally, you get the results of {\tt curl\_multi\_perform} by calling
+{\tt curl\_multi\_info\_read}. It also tells you how many messages are left.
+\begin{lstlisting}
+  msg = curl_multi_info_read(multi_handle, &msgs_left);
+\end{lstlisting}
+The return value \verb+msg->msg+ can be either {\tt CURLMSG\_DONE} or an error.
+The handle \verb+msg->easy_handle+ tells you which handle finished. You may have
+to look that up in your collection of handles.
 
-\subsection*{Data Races}
-Why are we bothering with locks? Data races. A data race occurs when
-two concurrent actions access the same variable and at least one of
-them is a {\bf write}. (This shows up on Assignment 1!)
+Some gotchas (thanks Desiye Collier):
+\begin{itemize}
+\item Checking \verb+msg->msg == CURLMSG_DONE+ is not sufficient to ensure that a curl request actually happened. You also need to check {\tt data.result}.
+\item (A1 hint:) To reset an individual handle in the {\tt multi\_handle}, you need to ``replace'' it. But you shouldn't use {\tt curl\_easy\_init()} to replace the handle.  In fact, you don't need a new handle at all.
+\end{itemize}
 
-  \begin{lstlisting}
-...
-static int counter = 0;
+\paragraph{Cleanup.} Always clean up after yourself! Use {\tt curl\_multi\_cleanup}
+to destroy the multi-handle and {\tt curl\_easy\_cleanup} to destroy each individual handle. If you replace the {\tt curl\_easy\_init} call by {\tt curl\_global\_init} for the multithreaded case (which is a good idea), then you should use {\tt curl\_global\_cleanup} to clean up.
 
-void* run(void* arg) {
-    for (int i = 0; i < 100; ++i) {
-        ++counter;
-    }
-}
+\paragraph{Example.}
+There is a not-great example at 
+\begin{center}
+\url{http://curl.haxx.se/libcurl/c/multi-app.html}
+\end{center}
+but I'm not even sure it works verbatim. You could use it as a solution template,
+but you'll need to add more code---I asked you to replace completed transfers in the
+{\tt curl\_multi}.
 
-int main(int argc, char *argv[])
-{
-    // Create 8 threads
-    // Join 8 threads
-    printf("counter = %i\n", counter);
-}
-  \end{lstlisting}
+\paragraph{A better way to use sockets.} Late-breaking news: instead
+of that {\tt select()} crud, use {\tt curl\_multi\_wait()}, which is
+just better, and easy to use. An example:
+\url{https://gist.github.com/clemensg/4960504}
 
-Is there a datarace in this example? If so, how would we fix it?
+\paragraph{About that socket-based alternative.} There is yet another interface which
+would allow you to use {\tt epoll}, but I couldn't figure it out. Sorry. The advantage,
+beyond using {\tt epoll}, is that {\tt libcurl} doesn't need to scan over all of the transfers
+when it receives notice that a transfer is ready. This can help when there are lots of sockets
+open.
 
-\paragraph{Solution: use mutexes.}
-  \begin{lstlisting}[escapechar=!]
-...
-!\bf{static pthread\_mutex\_t mutex = PTHREAD\_MUTEX\_INITIALIZER;}!
-static int counter = 0;
+From the manpage:
+\squishlist
+\item Create a multi handle
 
-void* run(void* arg) {
-    for (int i = 0; i < 100; ++i) {
-        !\bf{pthread\_mutex\_lock(\&mutex);}!
-        ++counter;
-        !\bf{pthread\_mutex\_unlock(\&mutex);}!
-    }
-}
+\item Set the socket callback with {\tt CURLMOPT\_SOCKETFUNCTION}
 
-int main(int argc, char *argv[])
-{
-    // Create 8 threads
-    // Join 8 threads
-    !\bf{pthread\_mutex\_destroy(\&mutex);}!
-    printf("counter = %i\n", counter);
-}
-  \end{lstlisting}
-(I'll leave expressing this in C++11 as an exercise to the reader.)
+\item Set the timeout callback with {\tt CURLMOPT\_TIMERFUNCTION}, to get to know what timeout value to use when waiting for socket activities.
+
+\item Add easy handles with {\tt curl\_multi\_add\_handle()}
+
+\item Provide some means to manage the sockets libcurl is using, so you can check them for activity. This can be done through your application code, or by way of an external library such as libevent or glib.
+
+\item Call {\tt curl\_multi\_socket\_action(..., CURL\_SOCKET\_TIMEOUT, 0, ...)} to kickstart everything. To get one or more callbacks called.
+
+\item Wait for activity on any of libcurl's sockets, use the timeout value your callback has been told.
+
+\item When activity is detected, call {\tt curl\_multi\_socket\_action()} for the socket(s) that got action. If no activity is detected and the timeout expires, call {\tt curl\_multi\_socket\_action(3)} with {\tt CURL\_SOCKET\_TIMEOUT}. 
+\squishend
+There's an example, which has too many moving parts, here:
+\begin{center}
+\url{http://curl.haxx.se/libcurl/c/hiperfifo.html}
+\end{center}
+It uses {\tt libevent}, which I totally don't want to talk about in this class.
+
 
 \end{document}

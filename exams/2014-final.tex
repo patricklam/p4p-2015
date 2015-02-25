@@ -1,0 +1,263 @@
+\documentclass[12pt]{article}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{fullpage}
+\usepackage{tikz}
+\usepackage{url}
+\usepackage{enumerate}
+\usetikzlibrary{shapes,arrows,calc,automata}
+
+\usepackage[listings]{tcolorbox}
+\newtcbinputlisting{\codelisting}[2][]{
+    listing file={#2},
+    fonttitle=\bfseries,
+    listing options={basicstyle=\ttfamily\footnotesize},
+    listing only,
+    #1
+}
+
+\begin{document}
+
+\title{Programming for Performance (ECE459): Final}
+\author{}
+\renewcommand{\today}{}
+\maketitle
+
+ ~\\[-8em]
+
+\begin{center}
+{\Large April 22, 2014}
+\end{center}
+
+This open-book final has 12 non-cover pages and 6 questions, worth 25 points each. You may consult any printed
+material (books, notes, etc).
+
+\section{Nonblocking I/O}
+
+This C code sends a file over a socket.
+
+\codelisting{code/sendfile.c}
+
+\paragraph{Part 1 (5 points).} Identify the lines in {\tt sendFile()}
+which perform blocking I/O.
+
+~\\
+
+\noindent
+Next, you'll convert {\tt sendFile()} to use nonblocking
+I/O. Here is some state that you'll want to maintain.
+
+\codelisting{code/sendfile_nbio.c}
+
+Create two functions: a new {\tt sendFile()} function,
+which opens the file and sets up the state in the {\tt sendfile\_state}
+struct; and a {\tt handle\_io()} function, which may read a chunk
+from the file and sends data over the socket. The {\tt handle\_io()} function
+should return and 0 when work remains and a nonzero value
+when the file has been completely sent over the network 
+(The read may be blocking;
+it is only the socket I/O that needs to be nonblocking.)
+ 
+%Describe, in a few sentences, the structural transformation that you'd
+%need to make to {\tt sendFile()} to make it use nonblocking I/O.
+%(You'll probably want to use 2 functions. What do these functions do,
+%and how do they get called?)
+
+%\paragraph{Answer.}~\\[3em]
+
+\paragraph{Part 2 (20 points).} Describe how the main function would call the functions I've described.
+Provide implementations for {\tt sendFile()} and {\tt handle\_io()}.
+You may assume the existence of 
+function {\tt setNonblocking()}, which will set the mode of the socket to
+non-blocking mode. You may omit error-handling code.
+
+\paragraph{Answer.}
+\newpage
+
+\section{Dependencies and OpenMP}
+Assume that {\tt A} and
+{\tt C} are properly allocated arrays. After the completion of {\tt slow}, the
+program reads the values of {\tt C}.
+\codelisting{code/exam-openmp.cpp}
+
+\paragraph{Part 1 (10 points).} For every {\tt for} loop in the {\tt work} function,
+identify the loop-carried dependencies. (Write your answers on the code itself.)
+
+\paragraph{Part 2 (15 points).} Assume you are only allowed to modify the {\tt work}
+function. Use OpenMP and any reordering you wish to optimize the code. Argue
+your function preserves the behaviour of the original.
+
+\paragraph{Answer.}~
+\newpage
+
+\section{OpenMPI and MapReduce}
+This OpenMPI code has a number of problems. One is sending too
+much information.
+\codelisting{code/logProcess-mpi.c}
+
+
+\paragraph{Reducing Communications Overhead (10 points).}
+Indicate changes to the code
+which would reduce the communications overhead. For this part,
+you do not need to say anything about returning the results to the
+master thread, nor about combining the results.
+
+\paragraph{MapReduce (15 points).} Instead of using OpenMPI,
+we could reformulate this as a MapReduce problem. (For this part, imagine that the
+code actually did collate the results from the worker threads and
+produced a combined histogram.)  Describe a suitable mapper function
+(explaining the format of its input, the algorithm, and the output)
+and reducer function.
+
+\paragraph{Answer.}~
+\newpage
+
+\section{GPU Computation: Password Cracking}
+Cyclic Redundancy Checks (CRCs) are not an acceptable hash function
+for passwords. However, for the purposes of this question, we'll
+pretend that they are. You can think of a CRC as a checksum which is
+resilient against transposition. 
+
+\codelisting{code/crc.c}
+{\scriptsize \verb+[Source: http://www.barrgroup.com/Embedded-Systems/How-To/CRC-Calculation-C-Code]+}
+
+Assume that you have a file containing CRCs of passwords and that you
+would like to recover the passwords using OpenCL. The
+passwords are all 6 characters from \verb+[0-9A-Za-z]+, i.e. ASCII
+range (48-57, 65-90, 97-122). Your approach is going to be: using the
+GPU, compute all of the CRCs for 6-character passwords from the given
+range and put passwords into a buffer indexed by CRC. In your kernel(s), you may assume the existence of {\tt decode\_char()} which converts from an int
+in the range $(0, 62)$ to
+a character in \verb+[0-9A-Za-z]+ and the existence of function {\tt atomic\_table\_write(buffer, index, c1, ..., c6)} which atomically writes the 6 characters of the
+password to the appropriate index in {\tt buffer}.
+
+\paragraph{Part 1 (6 marks).} Explain all the buffers that you would
+declare in the host code and state whether each buffer should be
+read-only, write-only, or read/write.
+
+~\\[5em]
+
+\paragraph{Part 2 (4 marks).} Describe the global range you'd pass
+to your {\tt enqueueNDRangeKernel} call(s).
+
+~\\[5em]
+
+\paragraph{Part 3 (15 marks).} Write relevant
+OpenCL kernel implementation(s). Include the important points; syntax
+and exact types aren't the most important thing, problem structure is.
+Argue that your implementation is thread-safe.
+
+~\\[20em]
+
+
+\section{Compiler Optimizations}
+
+Consider the {\tt visit} function below.
+\codelisting{code/foo.c}
+
+\subsection*{Part 1 (5 marks)}
+Assume that {\tt printf} has no cost and that {\tt root} is properly initialized to a list of sufficient length. Identify an obvious, yet unsafe, transformation that would halve the work done by {\tt visit}.
+
+\paragraph{Transformation:} ~\\[2em]
+
+\subsection*{Part 2 (10 marks)}
+Now, assume that {\tt visit} belongs to a larger multi-threaded
+program. Describe a potential action taken by another thread which
+makes the transformation unsafe.
+
+\paragraph{Why the transformation is unsafe:} ~\\[2em]
+
+\subsection*{Part 3 (10 marks)}
+(a) What if {\tt visit} belonged to a single-threaded program with
+no interrupts---would your proposed transformation be safe?
+Why or why not? (b) Would you expect a compiler to automatically
+carry out this transformation? What would stop it?
+
+\paragraph{Answers:} ~\\[5em]
+
+\section{Race Conditions/Thread Safety}
+
+Consider the following code:
+\codelisting{code/swap.c}
+For this question, assume the following global variables: {\tt int a = 1, b = 2, c = 3.}
+
+\subsection*{Part 1 (3 marks)}
+
+Let's say that we have two threads. One thread calls
+\verb+swap(&b, &a)+ while the other thread calls \verb+swap(&b, &c)+.
+Write down all possible expected outputs of the values of the
+variables after the calls complete, assuming that {\tt swap} is
+thread-safe.
+
+\paragraph{Expected outputs:}
+
+\newpage
+\subsection*{Part 2 (6 marks)}
+
+Assume each line of code is atomic. Write down an interleaving
+of the code in two separate threads that shows that {\tt swap}
+is not in fact thread-safe, along with the final output. That is,
+your output should not match either expected result from Part 1.
+You should only have code in one thread for each row of the table.
+(Use a scrap piece of paper and write your final answer in the table.)
+
+\begin{center}
+\begin{tabular}{l|l|l|l|l}
+  {\bf Thread 1: \verb+swap(&b, &a)+} & {\bf Thread 2: \verb+swap(&b, &c)+} & {\bf a} &{\bf b } & {\bf c} \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+\end{tabular}
+\end{center}
+
+\paragraph{Actual output:}
+
+\subsection*{Part 3 (4 marks)}
+
+Explain briefly (one sentence) what the {\tt restrict} keyword
+does. Assume we label both parameters to {\tt swap} with
+{\tt restrict}. Would this make the function thread-safe? Explain
+why or why not. If it does make the function thread-safe, ignore the locking portion when completing Part 4.
+
+\subsection*{Part 4 (12 marks)}
+Assume that in your code you create a mutex, {\tt m},
+and properly destroy it when the program ends. Write below where
+you would lock and unlock the mutex to make the code thread-safe.
+(Pseudocode like {\tt lock(m)} is OK.) Use the finest grain locking
+possible with a single lock.
+
+\codelisting{code/swap2.c}
+
+Show what happens with the same interleaving (from Part 2) on
+your lock-enabled code. Verify that you get one of the expected
+outputs. Explain why the code is now thread-safe in all cases.
+
+
+\begin{center}
+\begin{tabular}{l|l|l|l|l}
+  {\bf Thread 1: \verb+swap(&b, &a)+} & {\bf Thread 2: \verb+swap(&b, &c)+} & {\bf a} &{\bf b } & {\bf c} \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+  &&&& \\ \hline
+\end{tabular}
+\end{center}
+
+\paragraph{Actual output:}
+
+\paragraph{Explanation:}
+
+\end{document}

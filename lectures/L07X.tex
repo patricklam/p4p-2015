@@ -1,0 +1,285 @@
+\documentclass[11pt]{article}
+\usepackage{listings}
+\usepackage{tikz}
+\usepackage{url}
+%\usepackage{algorithm2e}
+\usetikzlibrary{arrows,automata,shapes,decorations.pathreplacing,positioning}
+\tikzstyle{block} = [rectangle, draw, fill=blue!20, 
+    text width=2.5em, text centered, rounded corners, minimum height=2em]
+\tikzstyle{bw} = [rectangle, draw, fill=blue!20, 
+    text width=3.5em, text centered, rounded corners, minimum height=2em]
+
+\newcommand{\handout}[5]{
+  \noindent
+  \begin{center}
+  \framebox{
+    \vbox{
+      \hbox to 5.78in { {\bf ECE459: Programming for Performance } \hfill #2 }
+      \vspace{4mm}
+      \hbox to 5.78in { {\Large \hfill #5  \hfill} }
+      \vspace{2mm}
+      \hbox to 5.78in { {\em #3 \hfill #4} }
+    }
+  }
+  \end{center}
+  \vspace*{4mm}
+}
+
+\newcommand{\lecture}[4]{\handout{#1}{#2}{#3}{#4}{Lecture #1}}
+\topmargin 0pt
+\advance \topmargin by -\headheight
+\advance \topmargin by -\headsep
+\textheight 8.9in
+\oddsidemargin 0pt
+\evensidemargin \oddsidemargin
+\marginparwidth 0.5in
+\textwidth 6.5in
+
+\parindent 0in
+\parskip 1.5ex
+%\renewcommand{\baselinestretch}{1.25}
+
+% http://gurmeet.net/2008/09/20/latex-tips-n-tricks-for-conference-papers/
+\newenvironment{itemizep}{
+ \begin{itemize}
+  \setlength{\itemsep}{0pt}
+  \setlength{\parsep}{3pt}
+  \setlength{\topsep}{3pt}
+  \setlength{\partopsep}{0pt}
+  \setlength{\leftmargin}{1.5em}
+  \setlength{\labelwidth}{1em}
+  \setlength{\labelsep}{0.5em} }
+ {\end{itemize}}
+\lstdefinelanguage{JavaScript}{
+  keywords={typeof, new, true, false, catch, function, return, null, catch, switch, var, if, in, while, do, else, case, break},
+  keywordstyle=\color{blue}\bfseries,
+  ndkeywords={class, export, boolean, throw, implements, import, this},
+  ndkeywordstyle=\color{darkgray}\bfseries,
+  identifierstyle=\color{black},
+  sensitive=false,
+  comment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  commentstyle=\color{purple}\ttfamily,
+  stringstyle=\color{red}\ttfamily,
+  morestring=[b]',
+  morestring=[b]"
+}
+\begin{document}
+
+\lecture{07X --- ``hors s\'erie'', 2015}{Winter 2015}{Patrick Lam}{version 1}
+
+I found these lecture notes lying around from previous year. I feel that I don't need
+to lecture about them: there's a lot of overlap with the non-blocking
+I/O content. But you may enjoy reading these, as they provide more context about
+programming servers for performance. This material will not appear on exams.
+
+\section*{Building Servers: Concurrent Socket I/O}
+Switching gears, we'll talk about building software that handles tons of connections. From a Quora
+question:
+
+    \begin{quote}
+      What is the ideal design for server process in Linux that handles concurrent socket I/O?
+    \end{quote}
+
+    So far in this class, we've seen:
+    \begin{itemizep}
+    \item processes;
+    \item threads; 
+    \item thread pools; and
+    \item non-blocking/async I/O.
+    \end{itemizep}
+
+We'll analyze the answer by Robert Love, Linux kernel
+hacker\footnote{\tiny
+  \url{https://plus.google.com/105706754763991756749/posts/VPMT8ucAcFH}}.
+
+\paragraph{The Real Question.}
+
+    \begin{quote}
+      How do you want to do I/O?
+    \end{quote}
+
+The question is not really ``how many threads should I use?''.
+
+\paragraph{Your Choices.} The first two both use blocking I/O, while the second two use
+non-blocking I/O.
+    \begin{itemizep}
+      \item Blocking I/O; 1 process per request.
+      \item Blocking I/O; 1 thread per request.
+      \item Asynchronous I/O, pool of threads, \\callbacks, \\ each thread handles multiple connections.
+      \item Nonblocking I/O, pool of threads, \\ multiplexed with select/poll,
+        event-driven, \\ each thread handles multiple connections.
+    \end{itemizep}
+
+\paragraph{Blocking I/O; 1 process per request.}
+This is the old Apache model.
+  \begin{itemizep}
+    \item The main thread waits for connections.
+    \item Upon connect, the main thread forks off a new process, which completely
+      handles the connection.
+    \item Each I/O request is blocking, e.g., reads wait until more data arrives.
+  \end{itemizep}
+
+Advantage: 
+  \begin{itemizep}
+    \item ``Simple to undertand and easy to program.''
+  \end{itemizep}
+
+Disadvantage:
+  \begin{itemizep}
+    \item High overhead from starting 1000s of processes.
+      (We can somewhat mitigate this using process pools).
+  \end{itemizep}
+This method can handle $\sim$10 000 processes, but doesn't generally scale beyond that, and
+uses many more resources than the alternatives.
+
+\paragraph{Blocking I/O; 1 thread per request.}
+    We know that threads are more lightweight than processes. So let's use threads instead
+of processes. Otherwise, this is the same as 1 process per request, but with less overhead.
+I/O is the same---it is still blocking.
+
+    Advantage:
+    \begin{itemizep}
+      \item Still simple to understand and easy to program.
+    \end{itemizep}
+
+    Disadvantages:
+    \begin{itemizep}
+      \item Overhead still piles up, although less than processes.
+      \item New complication: race conditions on shared data.
+    \end{itemizep}
+
+\paragraph{Asynchronous I/O.} The other two choices don't assign one thread or process per connection,
+but instead multiplex the threads to connections. We'll first talk
+about using asynchronous I/O with select or poll.  
+
+Here are (from 2006) some performance benefits of using asynchronous
+I/O on lighttpd\footnote{\tiny
+  \url{http://blog.lighttpd.net/articles/2006/11/12/lighty-1-5-0-and-linux-aio/}}:
+
+    \begin{tabular}{llrrr}
+    version & & fetches/sec & bytes/sec & CPU idle \\
+    1.4.13 & sendfile & 36.45 & 3.73e+06 & 16.43\% \\
+    1.5.0 & sendfile & 40.51 & 4.14e+06 & 12.77\% \\
+    1.5.0 & linux-aio-sendfile & 72.70 & 7.44e+06 & 46.11\% \\
+    \end{tabular}
+
+(Workload: $2\times 7200$ RPM in RAID1, 1GB RAM, transferring 10GBytes on a 100MBit network).
+
+The basic workflow is as follows: 
+   \begin{enumerate}
+     \item enqueue a request;
+     \item \ldots ~do something else;
+     \item (if needed) periodically check whether request is done; and
+     \item read the return value.
+   \end{enumerate}
+
+Some code which uses the Linux asynchronous I/O model is:
+\begin{lstlisting}[language=C]
+#include <aio.h>
+
+int main() {
+    // so far, just like normal
+    int file = open("blah.txt", O_RDONLY, 0);
+
+    // create buffer and control block
+    char* buffer = new char[SIZE_TO_READ];
+    aiocb cb;
+    
+    memset(&cb, 0, sizeof(aiocb));
+    cb.aio_nbytes = SIZE_TO_READ;
+    cb.aio_fildes = file;
+    cb.aio_offset = 0;
+    cb.aio_buf = buffer;
+
+    // enqueue the read
+    if (aio_read(&cb) == -1) { /* error handling */ }
+
+    do {
+      // ... do something else ...
+    while (aio_error(&cb) == EINPROGRESS); // poll
+
+    // inspect the return value
+    int numBytes = aio_return(&cb);
+    if (numBytes == -1) { /* error handling */ }
+
+    // clean up
+    delete[] buffer;
+    close(file);
+\end{lstlisting}
+
+\paragraph{Using Select/Poll.} The idea is to improve performance
+by letting each thread handle multiple connections.
+When a thread is ready, it uses select/poll to find work:
+    \begin{itemizep}
+      \item perhaps it needs to read from disk into a mmap'd tempfile;
+      \item perhaps it needs to copy the tempfile to the network.
+    \end{itemizep}
+
+In either case, the thread does work and updates the request state.
+
+\subsection*{Callback-Based Asynchronous I/O Model}
+Finally, we'll talk about a not-very-popular programming model for
+non-blocking I/O (at least for C programs; it's the only game in town
+for JavaScript and a contender for Go).  Instead of select/poll, you
+pass a callback to the I/O routine, which is to be executed upon
+success or failure.
+
+\begin{lstlisting}[language=C]
+void new_connection_cb (int cfd)
+{
+  if (cfd < 0) {
+    fprintf (stderr, "error in accepting connection!\n");
+    exit (1);
+  }
+
+  ref<connection_state> c = 
+    new refcounted<connection_state>(cfd);
+
+  // what to do in case of failure: clean up.
+  c->killing_task = delaycb(10, 0, wrap(&clean_up, c));
+
+  // link to the next task: got the input from the connection
+  fdcb (cfd, selread, wrap (&read_http_cb, cfd, c, true,
+                 wrap(&read_req_complete_cb)));
+}
+\end{lstlisting}
+
+
+\paragraph{{\tt node.js}: A Superficial View.} We'll wrap up today 
+by talking about the callback-based {\tt node.js} model.
+{\tt node.js} is another event-based nonblocking I/O model.
+Given that JavaScript doesn't have threads, the only way to write servers
+is using non-blocking I/O.
+
+The canonical example from the {\tt node.js} homepage:
+\begin{lstlisting}[language=JavaScript]
+var http = require('http');
+http.createServer(function (req, res) {
+  res.writeHead(200, {'Content-Type': 'text/plain'});
+  res.end('Hello World\n');
+}).listen(1337, '127.0.0.1');
+console.log('Server running at http://127.0.0.1:1337/');
+\end{lstlisting}
+
+Note the use of the callback---it's called upon each connection.
+
+However, usually we don't want to handle the fields in the request manually.
+We'd prefer a higher-level view. One option is expressjs\footnote{\url{http://expressjs.com}},
+and here's an an example from the Internet\footnote{\tiny \url{https://github.com/tglines/nodrr/blob/master/controllers/nod.js}}:
+\begin{lstlisting}[language=JavaScript]
+app.post('/nod', function(req, res) {
+  loadAccount(req,function(account) {
+    if(account && account.username) {
+      var n = new Nod();
+      n.username = account.username;
+      n.text = req.body.nod;
+      n.date = new Date();
+      n.save(function(err){
+        res.redirect('/');
+      });
+    }
+  });
+});
+\end{lstlisting}
+\end{document}
