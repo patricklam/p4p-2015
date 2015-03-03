@@ -179,7 +179,7 @@ double sum(double* array, int N)
   
   for (int i = 0; i < NUM_THREADS; i++)
   {
-    #pragma omp task shared(i, N)
+    #pragma omp task shared(N) firstprivate(i)
     {
       for (int j = N / NUM_THREADS * i; j < N / NUM_THREADS * (i+1); j++)
         subsums[i] += array[j];
