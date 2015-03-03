@@ -1,0 +1,664 @@
+\documentclass[aspectratio=169,10pt,compress]{beamer}
+
+\usetheme{m}
+
+\usepackage{booktabs}
+
+%% \usepackage{minted}
+%% \usemintedstyle{trac}
+
+% Text packages to stop warnings
+
+
+%% \usepackage{lmodern}
+%% \usepackage{textcomp}
+%% \usepackage[utf8]{inputenc}
+%% \usepackage[T1]{fontenc}
+%% \usepackage{ulem}
+%% \usepackage{listings}
+
+% Themes
+%% \useoutertheme[subsection=false, footline=institutetitle]{miniframes}
+%% \usecolortheme{uwaterloo}
+%% \useinnertheme{circles}
+
+%% % Suppress the navigation bar
+%% \beamertemplatenavigationsymbolsempty
+
+%% \lstset{basicstyle=\scriptsize, frame=single}
+
+\title{Assignment 3 Background}
+\subtitle{ECE 459: Programming for Performance}
+\author{Jon Eyolfson}
+\institute{University of Waterloo}
+\date{March 6, 2015}
+
+\begin{document}
+
+\maketitle
+
+\plain{Travelling Salesman Problem}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Problem Statement}
+
+  {\bf Given:} a list of cities, with distances between each pair of cities
+
+  \vspace{2em}
+
+  {\bf Goal:} find the shortest route that visits each city exactly once and
+  returns to the first city
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Genetic Algorithm}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{High-level Overview}
+
+  Generalizes heuristics from genetics
+
+  \vspace{2em}
+
+  Describes how to apply different random operations to improve our answer
+
+  \vspace{2em}
+
+  We only need to define a small number of operations that describe the problem
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Applications}
+
+  \begin{itemize}
+    \item Course scheduling
+    \item Many other NP-hard problems
+    \item Playing games
+  \end{itemize}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Terms}
+
+  \begin{description}
+    \item[Individual] A tour of cities, e.g. 1, 4, 3, 2
+    \item[Population] A collection of individuals
+    \item[Distance] The total units of distance to complete a tour
+  \end{description}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Pseudocode}
+
+  \begin{center}
+    \fbox{
+      \begin{minipage}{0.9\linewidth}
+        \small
+
+        create an initial population $pop(0) = X_1, ..., X_N$
+
+        $t \leftarrow$ 0
+
+        repeat
+
+        $\quad$ assign each $X_i$ in $pop(t)$ a probability
+        f($X_i$)/($\sum$ f($X_i$))
+
+        $\quad$ for i $\leftarrow$ 1 to N do
+
+        $\quad \quad$ a $\leftarrow$ random selection of individual from
+        $pop(t)$
+
+        $\quad \quad$ b $\leftarrow$ random selection of individual from
+        $pop(t)$
+
+        $\quad \quad$ child $\leftarrow$ reproduce(a, b)
+
+        $\quad \quad$ with small probability mutate child
+        
+        $\quad \quad$ add child to $pop(t+1)$
+
+        $\quad t \leftarrow t + 1$
+
+        until stopping criteria
+
+        return most fit individual
+      \end{minipage}
+    }
+  \end{center}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Our Job}
+
+  That's it, the operations we have to define are:
+  \begin{itemize}
+    \item Creating an initial population
+    \item Creating a fitness function ({\bf higher} is better)
+    \item Creating a selection function (not problem specific)
+    \item Creating a crossover function (or reproduce)
+    \item Creating a mutation function
+  \end{itemize}
+
+  \vfill
+
+  There are also two parameters, which we will keep constant:
+  \begin{description}
+    \item[Population size] 100
+    \item[Mutation probability] 1\%
+  \end{description}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Initial Population}
+
+  {\bf We represent our tours as a sequence of the city indexes}
+
+  \begin{itemize}
+    \item Start with a base tour which is all the cities in order, e.g. 1, 2, 3, 4, 5
+    \item Randomly shuffle the tours around for each individual
+  \end{itemize}
+
+  \begin{center}
+    \begin{tabular}{ll}
+      \toprule
+      ID & Tour\\
+      \midrule
+      P0 & 1, 5, 2, 4, 3\\
+      P1 & 1, 4, 5, 2, 3\\
+      P2 & 1, 3, 2, 5, 4\\
+      P3 & 1, 2, 4, 5, 3\\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+
+  {\bf For consistency our tour begins and ends at the first city}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Fitness Function}
+
+  An evaluation of an individual in the population
+
+  \vspace{2em}
+
+  Most obvious metric is to just use the distance of the tour
+
+  In this case, lower is better and we need higher is better
+
+  \vspace{2em}
+
+  \begin{enumerate}
+    \item Find the maximum distance in the population
+    \item Subtract a individual's distance from that value to obtain the fitness
+  \end{enumerate}
+
+  \vspace{2em}
+
+  {\bf Therefore the individual with the highest distance has a fitness of 0}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Selection Function}
+
+  Intuition is to have a better chance of picking more fit individuals
+
+  \vspace{2em}
+  
+  Find the fitness of each individual, and normalize the values
+  \begin{itemize}
+    \item The sum of all the normalized fitness values should equal 1
+  \end{itemize}
+
+  \vspace{2em}
+  
+  Sort, accumulate, and pick random values, R, between 0 and 1
+
+  \vspace{2em}
+
+  Select the individual whose accumulated normalized value is greater than R
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Selection Function Example}
+
+  \begin{center}
+    \begin{tabular}{llrr}
+      \toprule
+      ID & Tour & Distance & Fitness\\
+      \midrule
+      P0 & 1, 5, 2, 4, 3 & 100 &  0\\
+      P1 & 1, 4, 5, 2, 3 &  80 & 20\\
+      P2 & 1, 3, 2, 5, 4 &  50 & 50\\
+      P3 & 1, 2, 4, 5, 3 &  70 & 30\\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+
+  \begin{enumerate}
+    \item Normalize the fitness values (P0 = 0, P1 = 0.2, P2 = 0.5, P3 = 0.3)
+    \item Sort population by descending values (P2 = 0.5, P3 = 0.3, P1 = 0.2,
+      P0 = 0)
+    \item Accumulate the values (P2 = 0.5, P3 = 0.8, P1 = 1, P0 = 1)
+    \item Pick a random value, R, and select individual (if R = 0.4, pick P2)
+  \end{enumerate}
+
+  Repeat step 4 for as many selections as you need
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Crossover Function}
+
+  This is how we combine two individuals to create another individual
+
+  \begin{itemize}
+    \item We will use a simple ordered 
+      \begin{itemize}
+        \item Select a random subtour from the first parent and copy it into the
+          child (in order, all the cities at the same spot in the tour)
+        \item Copy the remaining cities, not already in the child, in the order
+          they appear in the second parent
+      \end{itemize}
+  \end{itemize}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Crossover Function Example}
+
+  \begin{center}
+    \begin{tabular}{ll}
+      \toprule
+      ID & Tour\\
+      \midrule
+      P2 & 1, 3, 2, 5, 4\\
+      P3 & 1, 2, 4, 5, 3\\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+
+  Suppose we chose P2 as the first parent and P3 as the second
+
+  \begin{enumerate}
+    \item Create a new child (C = 1, ?, ?, ?, ?)
+    \item Select a subtour from first parent to copy to child
+
+      Suppose we chose indexes 2 to 3 (C = 1, ?, 2, 5, ?)
+    \item Fill in the missing values from the second parent in order
+      (C = 1, 4, 2, 5, 3)
+  \end{enumerate}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Mutation Function}
+
+  How we may change an individual based off no other factors
+
+  \vspace{2em}
+
+  In our case we randomly change around a tour
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Mutation Function Example}
+
+  \begin{center}
+    \begin{tabular}{ll}
+      \toprule
+      ID & Tour\\
+      \midrule
+      C & 1, 4, 2, 5, 3\\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+
+  \begin{enumerate}
+    \item Select a subtour and reverse the order
+
+      Suppose we chose indexes 1 to 3 (C = 1, 5, 2, 4, 3)
+  \end{enumerate}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Pseudocode Again}
+
+  \begin{center}
+    \fbox{
+      \begin{minipage}{0.9\linewidth}
+        \small
+
+        create an initial population $pop(0) = X_1, ..., X_N$
+
+        $t \leftarrow$ 0
+
+        repeat
+
+        $\quad$ assign each $X_i$ in $pop(t)$ a probability
+        f($X_i$)/($\sum$ f($X_i$))
+
+        $\quad$ for i $\leftarrow$ 1 to N do
+
+        $\quad \quad$ a $\leftarrow$ random selection of individual from
+        $pop(t)$
+
+        $\quad \quad$ b $\leftarrow$ random selection of individual from
+        $pop(t)$
+
+        $\quad \quad$ child $\leftarrow$ reproduce(a, b)
+
+        $\quad \quad$ with small probability mutate child
+        
+        $\quad \quad$ add child to $pop(t+1)$
+
+        $\quad t \leftarrow t + 1$
+
+        until stopping criteria
+
+        return most fit individual
+      \end{minipage}
+    }
+  \end{center}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Summary}
+
+  That's all the operations we need for our genetic algorithm
+
+  {\bf YOU MAY NOT CHANGE THEIR HIGH-LEVEL OPERATION}
+
+  \vspace{2em}
+  
+  The interface to your algorithm is the following:
+  \begin{itemize}
+    \item A constructor call (will have the initial population)
+    \item An iteration call, repeated (selection, crossover, mutate)
+    \item A call to get the best individual found
+  \end{itemize}
+
+  {\bf YOU MAY NOT CHANGE THIS INTERFACE}
+
+  \vspace{2em}
+
+  Can't parallelize calls to iteration function, parallelize the iteration
+  function itself
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Implementation}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Introduction}
+
+  The code is more or less a direct translation of the high level functions
+
+  \vspace{2em}
+
+  Written in C++11, so we have complete control with nice abstractions
+  \begin{itemize}
+    \item The language should not be the main hurdle, ask if anything is
+      confusing
+  \end{itemize}
+
+  \vspace{2em}
+
+  Only used standard library functions, link to documentation is in the handout
+
+  \vspace{2em}
+
+  Used {\ttfamily typedef}s so you should be able to change data structures if
+  you want
+  \begin{itemize}
+    \item {\ttfamily string} indexes, etc.
+  \end{itemize}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Built-in Data Structures}
+
+  \begin{description}
+    \item[\ttfamily vector] basically an array
+    \item[\ttfamily unordered\_map] basically a hash table, key and associated
+      value
+
+      Hint: {\tt unordered\_set} (no associated values) may be useful
+    \item[\ttfamily pair] class with two fields ({\ttfamily first} and {\ttfamily second})
+      with associated types
+    \item[\ttfamily iterator] abstraction for pointers on containers
+  \end{description}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Our Data Structures}
+
+  \begin{description}
+    \item[\ttfamily distance\_map] field {\ttfamily distances}, a lookup table
+      for distances between cities, implemented with a 2D hash map (distances
+      calculated in constructor)
+    \vspace{1em}
+    \item[\ttfamily individual] field {\ttfamily best\_individual}, consists of
+      a tour and a metadata which may represent distance, fitness, normalized
+      fitness or accumulated fitness
+      \begin{description}
+        \item[\ttfamily tour\_container] field {\ttfamily tour}, a vector of
+          indexes
+
+          Note, does not include the first index, that is defined by field
+          {\ttfamily first\_index}
+        \item[\ttfamily union] field {\ttfamily metadata},
+          a union to all doubles, since we don't need
+          distance/fitness/etc. values all at the same time
+      \end{description}
+    \vspace{1em}
+    \item[\ttfamily population\_container] field {\ttfamily population}, a
+      vector of individuals
+  \end{description}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Our Functions}
+
+  \begin{description}
+    \item[\ttfamily iteration] performs one iteration of the genetic algorithm, it
+      replaces {\tt population} with a new population
+      \begin{itemize}
+        \item Before iteration is called, it is assumed all individuals in the
+          current population have a valid value of {\tt distance} for its
+          metadata
+      \end{itemize}
+    \item [\ttfamily distance] calculates the distance of a {\tt tour}
+    \item [\ttfamily selection] returns 100 (population size) pairs of iterators to
+      individuals in the current population to use for crossovers
+    \item [\ttfamily crossover] same as high-level explaination, returns a new
+      individual
+    \item [\ttfamily mutate] same as high-level explainatoin, modifies an individual
+  \end{description}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Built-in Algorithms}
+
+  All these standard C++ algorithms work with anything using the container
+  interface
+
+  \begin{description}
+    \item[\ttfamily max\_element] returns an iterator the the largest element, you
+      can use your own comparator function
+    \item[\ttfamily min\_element] same as above, but the smallest element
+    \item[\ttfamily sort] sorts a container, you can use your own comparator function
+    \item[\ttfamily upper\_bound] returns an iterator to the first element greater
+      than the value, only works on a {\bf sorted} container (if the default
+      comparator isn't used, you have to use the same one used to sort the
+      container)
+    \item[\ttfamily random\_shuffle] does {\tt n} random swaps of the elements in
+      the container
+  \end{description}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Tips}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Some Hurdles}
+
+  Confusing C++ error messages involving templates
+  \begin{itemize}
+    \item Use {\ttfamily clang++} to compile your program for clearer error
+      messages
+  \end{itemize}
+
+  \vspace{2em}
+
+  For the profiler reports, it might get pretty bad
+
+  \begin{itemize}
+    \item Look for one of the main functions (selection, crossover, etc.)
+    \item If the name is very weird, look where it's called from
+    \item If you run into mangled names use {\ttfamily c++filt}
+  \end{itemize}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[fragile]
+  \frametitle{Example Profiler Output}
+
+  {\ttfamily \tiny
+    [32] std::\_Hashtable<unsigned int, std::pair<unsigned int const,
+    std::unordered\_map<unsigned int, double, std::hash<unsigned int>,
+    std::equal\_to<unsigned int>, std::allocator<std::pair<unsigned int const,
+    double> > > >, std::allocator<std::pair<unsigned int const,
+    std::unordered\_map<unsigned int, double, std::hash<unsigned int>,
+    std::equal\_to<unsigned int>, std::allocator<std::pair<unsigned int const,
+    double> > > > >, std::\_Select1st<std::pair<unsigned int const,
+    std::unordered\_map<unsigned int, double, std::hash<unsigned int>,
+    std::equal\_to<unsigned int>, std::allocator<std::pair<unsigned int const,
+    double> > > > >, std::equal\_to<unsigned int>, std::hash<unsigned int>,
+    std::\_\_detail::\_Mod\_range\_hashing,
+    std::\_\_detail::\_Default\_ranged\_hash,
+    std::\_\_detail::\_Prime\_rehash\_policy, false, false, true>::clear()
+  }
+
+  \vfill
+
+  is actually {\tt distance\_map.clear()}, which is automatically called by the
+  destructor
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Things You Can Do}
+
+  Well, it's the most basic implementation, so there should be a lot you can do
+
+  \begin{itemize}
+    \item Introduce threads, using pthreads, C++11 threads, OpenMP, etc.
+
+    \vspace{1em}
+   
+    \item Experiment around with compiler options
+
+    \vspace{1em}
+
+    \item Use better algorithms or data structures
+  \end{itemize}
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\begin{frame}
+  \frametitle{Things You Need to Do}
+
+  {\bfseries Profile!}
+
+  \vspace{1em}
+
+  Keep the number of iterations constant between all profiles so they're
+  comparable
+
+  \vspace{1em}
+    
+  Start with a baseline profile (no changes)
+
+  \vspace{1em}
+
+  Pick your two best performance changes to add to the report
+  \begin{itemize}
+    \item Include a profile before and after the change (and only that
+      change!)
+    \item More specific instructions in the handout
+  \end{itemize}
+
+  \vspace{1em}
+
+  You don't have to profile both changes from the baseline
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Things To Notice}
+
+  As you increase the number of iterations, your best answer should get better
+
+  \vspace{1em}
+ 
+  The faster your program, the more iterations you can do in the time limit
+
+  \vspace{1em}
+
+  The optimal answer is 7542
+
+  \vspace{2em}
+      
+  Your program will be run on an unloaded equivalent of {\ttfamily ece459-1}
+
+  \vspace{1em}
+
+  The scores on the leaderboard are how many iterations you can do in 10 seconds
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\plain{GLHF}
+
+\end{document}
