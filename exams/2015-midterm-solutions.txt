@@ -38,7 +38,7 @@ is bounded.
 
 (1e) Duck: 2 hours from A to B, 2 hours from B to A, 2 hours from A to B again = 6 hours.
 
-Horse: 1 trip, 30 hours = 30 minutes.
+Horse: 1 trip = 1 hour.
 
 (2a) multiple threads concurrently updat shared variable pos
 (2b) could make accesses to pos atomic (pull it out of the for loop
