@@ -1,0 +1,119 @@
+Solutions for ECE 459 2015 midterm
+
+(1a) Concurrency: trying to write the program in a natural way (using threads).
+
+Parallelism: do multiple things at the same time to increase
+throughput. Concurrent programs may be easier to parallelize.
+
+(1b)
+
+int x = 0, y = 0;
+for (int c = 0; c < 3000*4000; c++) {
+  array[c] = x-y;
+  y++;
+  if (y == 4000) { y = 0; x++; }
+}
+
+(1c) It seems that this question wasn't as clear as I was hoping.
+We'll look at the student solutions and accept reasonable solutions.
+Here's what I intended:
+
+for (int i = 0; i < 100; i++) {
+  total += sum[i];
+}
+
+This is a canonical example of a reduction. The easiest way to safely
+parallelize it would be by making the update to total atomic:
+
+// shared isn't really necessary
+#pragma omp parallel for shared(total, sum)
+for (int i = 0; i < 100; i++) {
+  #pragma omp atomic
+  total += sum[i];
+}
+
+(1d) Gustafson's law allows the use of more fine-grained grids. Amdahl's law
+says that the minimum time to make a prediction for a given grid density
+is bounded.
+
+(1e) Duck: 2 hours from A to B, 2 hours from B to A, 2 hours from A to B again = 6 hours.
+
+Horse: 1 trip, 30 hours = 30 minutes.
+
+(2a) multiple threads concurrently updat shared variable pos
+(2b) could make accesses to pos atomic (pull it out of the for loop
+and put it on the last line inside the loop), or could make pos
+private and compute it on every iteration (pos = r * cols + c)
+(2c) profile it and obesrve running times
+
+(3a) resource leaks and deadlocks are the biggest problems with
+forcible kills.
+
+1-line example: high-latency-operation grabs a lock, killed, lock never freed.
+
+(3b) (didn't try to compile, but this is the idea)
+
+int tid_count;
+int * tids;
+boolean * cancelled;
+pthread_mutex_t mymutex = PTHREAD_MUTEX_INITIALIZER;
+
+void init_cancellation() {
+  tid_count = 0;
+  tids = malloc(sizeof(int) * MAX_TIDS);
+  cancelled = malloc(sizeof(boolean) * MAX_TIDS);
+}
+
+void cancel_thread(int tid) {
+  pthread_lock(&mymutex);
+  tids[tid_count] = tid;
+  cancelled[tid_count] = true;
+  tid_count++;
+  pthread_unlock(&mymutex);
+}
+
+void thread_main() {
+  for (int i = 0; i < 1000; i++) {
+    high_latency_operation();
+    pthread_lock(&mymutex);
+    for (int j = 0; j < tid_count; j++) {
+      if (tids[j] == gettid() && cancelled[j])
+        return;
+    }
+    pthread_unlock(&mymutex);
+  }
+}
+
+This code is free of races because the accesses are all protected
+by a single lock. Also, all related operations are under the same
+lock acquisition.
+
+What I'm looking for here is (1) some code that sets the cancellation
+flag and (2) some code that reads it. These should be free of races.
+
+(4a) interleaving:
+
+[my_counter = 5]
+T1 my_counter = counter;
+T1 if (my_counter > 5) [evaluates to false]
+T2 my_counter++
+T1 if (my_counter > 5) [evaluates to true]
+T1   my_func(...) // uninitialized function call
+
+fix: I could think of the following 3 options:
+(1) merge the two if tests;
+(2) wrap the whole thing inside a lock;
+(3) make counter a C++ atomic; then the compiler won't re-copy the value
+
+(b)
+
+[T2] reg2 = count -> 17
+[T1] count = 0
+[T2] count = reg2 -> 17
+[T1] reg1 = count -> 17
+[T2] count = 0    -> 0
+[T1] count = reg1 -> 17
+
+No, each of these statements was already atomic, so it wouldn't help.
+
+
