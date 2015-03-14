@@ -198,7 +198,7 @@ Each sample counts as 0.01 seconds.
   gprof's unreliable conclusion: \\ {\tt easy}, {\tt hard} 
   both cause 840ms of {\tt work} time.\\[1em]
   
-  \alert{Wrong}: {\tt work} takes 1000$\times$ longer when called from {\tt hard}!
+  \alert{Wrong}: {\tt work} takes 1000000$\times$ longer when called from {\tt hard}!
 \end{changemargin}
 \end{frame}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -429,7 +429,7 @@ int main() {
   \frametitle{Exploring the lie}
 
   \begin{changemargin}{2cm}
-    Next step: crate microbenchmarks.\\[1em]
+    Next step: create microbenchmarks.\\[1em]
     Memory accesses to uncached locations,\\
     or computations,\\[1em]
     surrounded by store pairs/mfence/locks.\\[1em]
